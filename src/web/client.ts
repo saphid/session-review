@@ -52,12 +52,19 @@ runButton.addEventListener("click", () => void run());
 piSendButton.addEventListener("click", () => void sendPiChat());
 piNewChatButton.addEventListener("click", () => resetPiChat());
 clearSelectedChatItemButton.addEventListener("click", () => setSelectedChatItem(null));
+element<HTMLTextAreaElement>("piPrompt").addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    void sendPiChat();
+  }
+});
 window.addEventListener("popstate", () => { activeTab = location.pathname.startsWith("/session/") ? "session" : activeTab === "session" ? "search" : activeTab; void run(); });
 void init();
 
 async function init(): Promise<void> {
   const filters = await getJson<{ providers: string[]; cwd: string[] }>("/api/filters");
   for (const item of filters.providers) element<HTMLSelectElement>("provider").append(new Option(item, item));
+  updateChatSessionPill();
   syncPanels();
   await run();
 }
@@ -221,8 +228,9 @@ function resetPiChat(): void {
   piChatId = crypto.randomUUID();
   localStorage.setItem(piChatIdKey, piChatId);
   chatHistory.length = 0;
-  element<HTMLDivElement>("chatMessages").replaceChildren();
+  element<HTMLDivElement>("chatMessages").replaceChildren(chatEmptyState());
   setSelectedChatItem(null);
+  updateChatSessionPill();
   setPiStatus(`Started new persistent Pi chat ${piChatId.slice(0, 8)}.`);
   updatePiContextPreview();
 }
@@ -235,15 +243,18 @@ async function sendPiChat(): Promise<void> {
   appendChatMessage("user", message);
   chatHistory.push({ role: "user", content: message });
   piSendButton.disabled = true;
-  setPiStatus("Pi is reading the loaded files and thinking…");
+  const typing = appendTypingMessage();
+  setPiStatus("Pi xhigh is reading the loaded files and thinking…");
   try {
     const payload = piPayload(message);
     const result = await postJson<{ ok: boolean; reply: string; message: string; chatId: string; continued: boolean; sessionDir: string; contextPath: string; attachedFiles: string[]; stderr?: string }>("/api/pi/chat", payload);
+    typing.remove();
     const reply = result.reply || result.stderr || result.message;
     appendChatMessage(result.ok ? "assistant" : "assistant", reply, result.ok ? undefined : "error");
     chatHistory.push({ role: "assistant", content: reply });
     setPiStatus(`${result.message} ${result.continued ? "Continued" : "Started"} persistent Pi session ${result.chatId.slice(0, 8)}. Attached ${result.attachedFiles.length} files. Context: ${result.contextPath}`);
   } catch (error) {
+    typing.remove();
     const text = `Failed to chat with Pi: ${error instanceof Error ? error.message : String(error)}`;
     appendChatMessage("assistant", text, "error");
     setPiStatus(text);
@@ -259,11 +270,68 @@ function piPayload(message: string): { chatId: string; message: string; screen: 
 
 function appendChatMessage(role: "user" | "assistant", content: string, extraClass = ""): void {
   const container = element<HTMLDivElement>("chatMessages");
+  container.querySelector(".chat-empty")?.remove();
   const message = document.createElement("div");
   message.className = `chat-message ${role} ${extraClass}`.trim();
-  message.textContent = content;
+  message.append(chatAvatar(role), chatBubble(content));
   container.append(message);
   container.scrollTop = container.scrollHeight;
+}
+
+function appendTypingMessage(): HTMLElement {
+  const container = element<HTMLDivElement>("chatMessages");
+  container.querySelector(".chat-empty")?.remove();
+  const message = document.createElement("div");
+  message.className = "chat-message assistant typing";
+  const bubble = document.createElement("div");
+  bubble.className = "chat-bubble";
+  bubble.innerHTML = '<span class="typing-dots">Thinking</span>';
+  message.append(chatAvatar("assistant"), bubble);
+  container.append(message);
+  container.scrollTop = container.scrollHeight;
+  return message;
+}
+
+function chatAvatar(role: "user" | "assistant"): HTMLElement {
+  const avatar = document.createElement("div");
+  avatar.className = "chat-avatar";
+  avatar.textContent = role === "user" ? "You" : "π";
+  return avatar;
+}
+
+function chatBubble(content: string): HTMLElement {
+  const bubble = document.createElement("div");
+  bubble.className = "chat-bubble";
+  bubble.append(...chatContentNodes(content));
+  return bubble;
+}
+
+function chatContentNodes(content: string): Node[] {
+  const blocks = splitCodeFences(content, "assistant");
+  const nodes: Node[] = [];
+  for (const block of blocks) {
+    if (block.kind === "code") {
+      nodes.push(codeBlock(block.code, block.language, block.source));
+      continue;
+    }
+    for (const para of block.text.split(/\n{2,}/)) {
+      const p = document.createElement("p");
+      p.textContent = para.trim();
+      if (p.textContent) nodes.push(p);
+    }
+  }
+  return nodes.length ? nodes : [document.createTextNode(content)];
+}
+
+function chatEmptyState(): HTMLElement {
+  const empty = document.createElement("div");
+  empty.className = "chat-empty";
+  empty.textContent = "Ask about the current search results or session transcript. Click any result/group/turn to pin it as context.";
+  return empty;
+}
+
+function updateChatSessionPill(): void {
+  element<HTMLElement>("chatSessionPill").textContent = `chat ${piChatId.slice(0, 8)}`;
 }
 
 function setSelectedChatItem(item: SelectedChatItem | null): void {

@@ -11,7 +11,7 @@
       :root { --user:#3b82f6; --assistant:#9ca3af; --tool:#a855f7; --skill:#a6e22e; --system:#64748b; --panel:#17191f; --border:#2b2d33; --muted:#9aa1b3; }
       body { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; background: #101114; color: #e8e8ea; }
       header { padding: 18px 24px; border-bottom: 1px solid #2b2d33; background: #17191f; }
-      .app-shell { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 18px; max-width: 2080px; margin: 0 auto; padding: 20px 24px; align-items: start; }
+      .app-shell { display: grid; grid-template-columns: minmax(0, 1fr) 440px; gap: 18px; max-width: 2160px; margin: 0 auto; padding: 20px 24px; align-items: start; }
       main { display: grid; gap: 18px; min-width: 0; }
       section, .pi-sidebar { background: #17191f; border: 1px solid #2b2d33; border-radius: 12px; padding: 16px; box-shadow: 0 16px 40px rgba(0,0,0,.18); }
       .filters { display: grid; grid-template-columns: repeat(6, minmax(120px, 1fr)); gap: 10px; }
@@ -76,17 +76,39 @@
       canvas { width: 100% !important; height: 100% !important; }
       table { width: 100%; border-collapse: collapse; }
       th, td { border-bottom: 1px solid #2b2d33; padding: 8px; text-align: left; }
-      .pi-sidebar { position: sticky; top: 18px; max-height: calc(100vh - 36px); overflow: auto; }
-      .pi-sidebar h2 { margin-top: 0; }
-      .pi-sidebar textarea { width: 100%; min-height: 90px; resize: vertical; font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-      .pi-sidebar .actions { display:flex; gap:8px; align-items:center; margin-top:10px; }
+      .pi-sidebar { position: sticky; top: 18px; height: calc(100vh - 36px); overflow: hidden; display:grid; grid-template-rows:auto auto minmax(220px,1fr) auto auto; gap:10px; padding:0; background:#141820; }
+      .chat-header { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding:14px 14px 10px; border-bottom:1px solid var(--border); background:linear-gradient(180deg,#1b2230,#141820); }
+      .chat-title { display:grid; gap:4px; }
+      .chat-title h2 { margin:0; font-size:16px; }
+      .chat-subtitle { color:var(--muted); font-size:12px; line-height:1.35; }
+      .chat-session-pill { border:1px solid #3b3f4b; border-radius:999px; color:#c8d0e5; background:#0f1117; padding:4px 8px; font:11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; white-space:nowrap; }
+      .chat-context { display:grid; gap:8px; padding:0 12px; }
+      .chat-messages { display:flex; flex-direction:column; gap:14px; overflow:auto; padding:14px 12px; background:radial-gradient(circle at top left,rgba(72,100,230,.08),transparent 45%),#0f1117; border-block:1px solid var(--border); }
+      .chat-empty { margin:auto; text-align:center; color:var(--muted); max-width:310px; font-size:13px; line-height:1.45; }
+      .chat-message { display:grid; grid-template-columns:26px minmax(0,1fr); gap:8px; align-items:start; }
+      .chat-avatar { width:26px; height:26px; display:grid; place-items:center; border-radius:7px; font-size:12px; font-weight:700; background:#26324a; color:#dce4ff; }
+      .chat-bubble { padding:10px 12px; border:1px solid #303646; border-radius:12px; background:#1c222d; color:#eef2ff; font-size:13px; line-height:1.5; overflow-wrap:anywhere; box-shadow:0 8px 22px rgba(0,0,0,.18); }
+      .chat-message.user { grid-template-columns:minmax(0,1fr) 26px; align-self:end; max-width:94%; }
+      .chat-message.user .chat-avatar { grid-column:2; background:#314cc9; }
+      .chat-message.user .chat-bubble { grid-column:1; grid-row:1; background:#172554; border-color:#315f9e; }
+      .chat-message.assistant { align-self:stretch; }
+      .chat-message.assistant .chat-avatar { background:#3b2f5f; color:#e9ddff; }
+      .chat-message.error .chat-bubble { background:#4a1f24; color:#ffd4d4; border-color:#7f2d36; }
+      .chat-bubble p { margin:0 0 8px; }
+      .chat-bubble p:last-child { margin-bottom:0; }
+      .chat-bubble pre { margin:8px 0; max-height:320px; overflow:auto; border:1px solid #303646; border-radius:8px; padding:10px; background:#0d1117; }
+      .chat-bubble code { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; }
+      .typing .chat-bubble { color:var(--muted); }
+      .typing-dots::after { content:""; animation:dots 1.4s infinite; }
+      @keyframes dots { 0%{content:""} 25%{content:"."} 50%{content:".."} 75%,100%{content:"..."} }
+      .chat-composer { display:grid; gap:8px; padding:10px 12px 12px; border-top:1px solid var(--border); background:#141820; }
+      .composer-box { display:grid; grid-template-columns:1fr; border:1px solid #3b3f4b; border-radius:12px; background:#0f1117; overflow:hidden; }
+      .pi-sidebar textarea { width:100%; min-height:86px; max-height:220px; resize:vertical; border:0; border-radius:0; background:transparent; font:13px/1.45 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,sans-serif; }
+      .composer-actions { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:8px; border-top:1px solid #242936; }
+      .composer-hint { color:var(--muted); font-size:11px; }
+      .pi-sidebar .actions { display:flex; gap:8px; align-items:center; }
       .pi-sidebar pre { max-height: 260px; overflow:auto; padding:10px; border:1px solid var(--border); border-radius:8px; background:#0f1117; color:#c8d0e5; font-size:12px; white-space:pre-wrap; }
-      .chat-messages { display:grid; gap:10px; max-height: 380px; overflow:auto; padding:10px; border:1px solid var(--border); border-radius:10px; background:#0f1117; margin: 10px 0; }
-      .chat-message { padding:9px 10px; border-radius:10px; white-space:pre-wrap; font-size:13px; line-height:1.45; }
-      .chat-message.user { background:#16244a; justify-self:end; max-width:92%; }
-      .chat-message.assistant { background:#20232b; justify-self:start; max-width:100%; }
-      .chat-message.error { background:#4a1f24; color:#ffd4d4; }
-      .selected-chat-item { display:flex; gap:8px; justify-content:space-between; align-items:center; border:1px solid #4864e6; background:rgba(72,100,230,.12); border-radius:999px; padding:6px 9px; color:#dce4ff; font-size:12px; }
+      .selected-chat-item { display:flex; gap:8px; justify-content:space-between; align-items:center; border:1px solid #4864e6; background:rgba(72,100,230,.12); border-radius:10px; padding:8px 9px; color:#dce4ff; font-size:12px; }
       .selected-chat-item[hidden] { display:none; }
       .selected-for-chat { outline: 2px solid #8da2ff; outline-offset: 2px; }
       .selectable-chat-item { cursor: pointer; }
@@ -129,19 +151,31 @@
       <section id="sessionPanel" hidden><h2>Session Details</h2><div id="sessionDetails"></div></section>
     </main>
     <aside class="pi-sidebar" aria-label="Pi sidebar agent">
-      <h2>Pi sidebar chat</h2>
-      <p class="muted">Ask Pi about the current screen. Pi receives the screen context and full contents of all loaded related files.</p>
-      <div id="selectedChatItem" class="selected-chat-item" hidden><span id="selectedChatItemLabel"></span><button id="clearSelectedChatItem" type="button">Clear</button></div>
-      <div id="chatMessages" class="chat-messages" aria-live="polite"></div>
-      <label>Message Pi
-        <textarea id="piPrompt" placeholder="Ask about the selected session, visible results, subagent grouping, or how this screen works…"></textarea>
-      </label>
-      <div class="actions"><button id="piSend">Send to Pi</button><button id="piNewChat" type="button">New chat</button></div>
-      <p id="piStatus" class="muted" role="status">Ready. Click a page item to attach it as the selected item. Follow-ups use the same persistent Pi session.</p>
-      <details>
-        <summary>Context preview</summary>
-        <pre id="piContextPreview">No context yet.</pre>
-      </details>
+      <div class="chat-header">
+        <div class="chat-title">
+          <h2>Pi Chat</h2>
+          <div class="chat-subtitle">xhigh persistent session with current screen files attached</div>
+        </div>
+        <div id="chatSessionPill" class="chat-session-pill">session</div>
+      </div>
+      <div class="chat-context">
+        <div id="selectedChatItem" class="selected-chat-item" hidden><span id="selectedChatItemLabel"></span><button id="clearSelectedChatItem" type="button">Clear</button></div>
+        <details>
+          <summary>Context preview</summary>
+          <pre id="piContextPreview">No context yet.</pre>
+        </details>
+      </div>
+      <div id="chatMessages" class="chat-messages" aria-live="polite"><div class="chat-empty">Ask about the current search results or session transcript. Click any result/group/turn to pin it as context.</div></div>
+      <div class="chat-composer">
+        <div class="composer-box">
+          <textarea id="piPrompt" aria-label="Message Pi" placeholder="Ask Pi about this screen…"></textarea>
+          <div class="composer-actions">
+            <span class="composer-hint">Enter to send · Shift+Enter for newline</span>
+            <div class="actions"><button id="piNewChat" type="button">New chat</button><button id="piSend">Send</button></div>
+          </div>
+        </div>
+        <p id="piStatus" class="muted" role="status">Ready. Follow-ups use the same persistent Pi session.</p>
+      </div>
     </aside>
     </div>
     <script type="module" src="/client.js"></script>

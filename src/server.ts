@@ -153,7 +153,7 @@ Be concise. If the selected item matters, explicitly say what selected item you 
 async function runPiPrint(promptPath: string, files: string[], sessionDir: string, continued: boolean): Promise<{ ok: boolean; reply: string; stderr: string; message: string }> {
   const prompt = await readFile(promptPath, "utf8");
   return new Promise((resolve) => {
-    const args = ["--print", "--session-dir", sessionDir, ...(continued ? ["--continue"] : []), "--tools", "read,grep,find,ls", ...files.map((file) => `@${file}`), prompt];
+    const args = ["--print", "--thinking", "xhigh", "--session-dir", sessionDir, ...(continued ? ["--continue"] : []), "--tools", "read,grep,find,ls", ...files.map((file) => `@${file}`), prompt];
     const child = spawn(piBin, args, { cwd: rootDir, stdio: ["ignore", "pipe", "pipe"] });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
