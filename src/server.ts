@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { filterOptions, openDb, searchFilteredSessions, sessionDetails, usageSummary, usageTimeline } from "./db.js";
@@ -68,6 +68,7 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
 
 type PiChatMessage = { role: "user" | "assistant"; content: string };
 type PiChatPayload = {
+  chatId?: string;
   message?: string;
   screen?: unknown;
   selectedItem?: unknown;
@@ -80,14 +81,18 @@ async function chatWithPi(request: IncomingMessage, response: ServerResponse): P
   const message = payload.message?.trim();
   if (!message) return sendJson(response, 400, { error: "missing message" });
 
-  const id = randomUUID().slice(0, 8);
-  const outDir = path.join(rootDir, "output", "pi-chat", id);
+  const chatId = safeChatId(payload.chatId) || randomUUID().slice(0, 8);
+  const turnId = randomUUID().slice(0, 8);
+  const outDir = path.join(rootDir, "output", "pi-chat", chatId, turnId);
+  const sessionDir = path.join(rootDir, "output", "pi-chat-sessions", chatId);
   await mkdir(outDir, { recursive: true });
+  await mkdir(sessionDir, { recursive: true });
   const contextPath = path.join(outDir, "screen-context.json");
   const promptPath = path.join(outDir, "prompt.md");
   const appSourceFiles = sessionReviewSourceFiles();
   const files = uniqueFiles([...(payload.files ?? []), ...appSourceFiles]);
   const context = {
+    chatId,
     generatedAt: new Date().toISOString(),
     screen: payload.screen ?? null,
     selectedItem: payload.selectedItem ?? null,
@@ -99,8 +104,9 @@ async function chatWithPi(request: IncomingMessage, response: ServerResponse): P
   await writeFile(contextPath, `${JSON.stringify(context, null, 2)}\n`, "utf8");
   await writeFile(promptPath, piChatPrompt(message, contextPath), "utf8");
   const attachedFiles = uniqueFiles([contextPath, ...files]);
-  const result = await runPiPrint(promptPath, attachedFiles);
-  return sendJson(response, result.ok ? 200 : 500, { ...result, contextPath, attachedFiles });
+  const continued = await hasExistingPiSession(sessionDir);
+  const result = await runPiPrint(promptPath, attachedFiles, sessionDir, continued);
+  return sendJson(response, result.ok ? 200 : 500, { ...result, chatId, continued, sessionDir, contextPath, attachedFiles });
 }
 
 function sessionReviewSourceFiles(): string[] {
@@ -114,6 +120,20 @@ function sessionReviewSourceFiles(): string[] {
 
 function uniqueFiles(files: string[]): string[] {
   return [...new Set(files.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim()))];
+}
+
+function safeChatId(value: string | undefined): string | null {
+  const safe = value?.trim().replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64);
+  return safe || null;
+}
+
+async function hasExistingPiSession(sessionDir: string): Promise<boolean> {
+  try {
+    const entries = await readdir(sessionDir);
+    return entries.some((entry) => entry.endsWith(".jsonl"));
+  } catch {
+    return false;
+  }
 }
 
 function piChatPrompt(message: string, contextPath: string): string {
@@ -130,10 +150,10 @@ ${message}
 Be concise. If the selected item matters, explicitly say what selected item you are using.`;
 }
 
-async function runPiPrint(promptPath: string, files: string[]): Promise<{ ok: boolean; reply: string; stderr: string; message: string }> {
+async function runPiPrint(promptPath: string, files: string[], sessionDir: string, continued: boolean): Promise<{ ok: boolean; reply: string; stderr: string; message: string }> {
   const prompt = await readFile(promptPath, "utf8");
   return new Promise((resolve) => {
-    const args = ["--print", "--tools", "read,grep,find,ls", ...files.map((file) => `@${file}`), prompt];
+    const args = ["--print", "--session-dir", sessionDir, ...(continued ? ["--continue"] : []), "--tools", "read,grep,find,ls", ...files.map((file) => `@${file}`), prompt];
     const child = spawn(piBin, args, { cwd: rootDir, stdio: ["ignore", "pipe", "pipe"] });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];

@@ -32,7 +32,9 @@ let lastUsageResponse: UsageResponse | null = null;
 const chatHistory: ChatMessage[] = [];
 let selectedChatItem: SelectedChatItem | null = null;
 const transcriptLineLimitKey = "session-review-transcript-line-limit";
+const piChatIdKey = "session-review-pi-chat-id";
 const defaultTranscriptLineLimit = 18;
+let piChatId = existingOrNewPiChatId();
 
 const searchTab = element<HTMLButtonElement>("searchTab");
 const usageTab = element<HTMLButtonElement>("usageTab");
@@ -41,12 +43,14 @@ const usagePanel = element<HTMLElement>("usagePanel");
 const sessionPanel = element<HTMLElement>("sessionPanel");
 const runButton = element<HTMLButtonElement>("run");
 const piSendButton = element<HTMLButtonElement>("piSend");
+const piNewChatButton = element<HTMLButtonElement>("piNewChat");
 const clearSelectedChatItemButton = element<HTMLButtonElement>("clearSelectedChatItem");
 
 searchTab.addEventListener("click", () => setTab("search"));
 usageTab.addEventListener("click", () => setTab("usage"));
 runButton.addEventListener("click", () => void run());
 piSendButton.addEventListener("click", () => void sendPiChat());
+piNewChatButton.addEventListener("click", () => resetPiChat());
 clearSelectedChatItemButton.addEventListener("click", () => setSelectedChatItem(null));
 window.addEventListener("popstate", () => { activeTab = location.pathname.startsWith("/session/") ? "session" : activeTab === "session" ? "search" : activeTab; void run(); });
 void init();
@@ -205,6 +209,24 @@ function newestTimestamp(rows: SearchResult[]): string {
   return rows.map((row) => row.startedAt ?? "").sort().at(-1) ?? "";
 }
 
+function existingOrNewPiChatId(): string {
+  const existing = localStorage.getItem(piChatIdKey);
+  if (existing) return existing;
+  const created = crypto.randomUUID();
+  localStorage.setItem(piChatIdKey, created);
+  return created;
+}
+
+function resetPiChat(): void {
+  piChatId = crypto.randomUUID();
+  localStorage.setItem(piChatIdKey, piChatId);
+  chatHistory.length = 0;
+  element<HTMLDivElement>("chatMessages").replaceChildren();
+  setSelectedChatItem(null);
+  setPiStatus(`Started new persistent Pi chat ${piChatId.slice(0, 8)}.`);
+  updatePiContextPreview();
+}
+
 async function sendPiChat(): Promise<void> {
   const input = element<HTMLTextAreaElement>("piPrompt");
   const message = input.value.trim();
@@ -216,11 +238,11 @@ async function sendPiChat(): Promise<void> {
   setPiStatus("Pi is reading the loaded files and thinking…");
   try {
     const payload = piPayload(message);
-    const result = await postJson<{ ok: boolean; reply: string; message: string; contextPath: string; attachedFiles: string[]; stderr?: string }>("/api/pi/chat", payload);
+    const result = await postJson<{ ok: boolean; reply: string; message: string; chatId: string; continued: boolean; sessionDir: string; contextPath: string; attachedFiles: string[]; stderr?: string }>("/api/pi/chat", payload);
     const reply = result.reply || result.stderr || result.message;
     appendChatMessage(result.ok ? "assistant" : "assistant", reply, result.ok ? undefined : "error");
     chatHistory.push({ role: "assistant", content: reply });
-    setPiStatus(`${result.message} Attached ${result.attachedFiles.length} files. Context: ${result.contextPath}`);
+    setPiStatus(`${result.message} ${result.continued ? "Continued" : "Started"} persistent Pi session ${result.chatId.slice(0, 8)}. Attached ${result.attachedFiles.length} files. Context: ${result.contextPath}`);
   } catch (error) {
     const text = `Failed to chat with Pi: ${error instanceof Error ? error.message : String(error)}`;
     appendChatMessage("assistant", text, "error");
@@ -230,9 +252,9 @@ async function sendPiChat(): Promise<void> {
   }
 }
 
-function piPayload(message: string): { message: string; screen: unknown; selectedItem: unknown; files: string[]; history: ChatMessage[] } {
+function piPayload(message: string): { chatId: string; message: string; screen: unknown; selectedItem: unknown; files: string[]; history: ChatMessage[] } {
   const screen = screenContext();
-  return { message, screen, selectedItem: selectedChatItem, files: relatedFiles(), history: chatHistory.slice(-12) };
+  return { chatId: piChatId, message, screen, selectedItem: selectedChatItem, files: relatedFiles(), history: chatHistory.slice(-12) };
 }
 
 function appendChatMessage(role: "user" | "assistant", content: string, extraClass = ""): void {
@@ -350,6 +372,7 @@ function relatedFiles(): string[] {
 function updatePiContextPreview(): void {
   const files = relatedFiles();
   const preview = {
+    chatId: piChatId,
     tab: activeTab,
     files: files.slice(0, 20),
     fileCount: files.length,
