@@ -1,0 +1,35 @@
+{
+  "name": "session-review",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "session-review": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "check": "tsc --noEmit",
+    "start": "tsx src/cli.ts",
+    "ingest": "tsx src/cli.ts ingest --all",
+    "search": "tsx src/cli.ts search",
+    "lint": "eslint src/**/*.ts",
+    "dev": "tsx src/server.ts",
+    "app": "npm run build && node dist/server.js",
+    "derive": "tsx src/cli.ts derive",
+    "e2e:screenshots": "node tests/e2e-session-page.mjs"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.8.1",
+    "chart.js": "^4.5.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.13.1",
+    "eslint": "^10.2.1",
+    "playwright": "^1.59.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.59.0"
+  }
+}

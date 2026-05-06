@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Session Review</title>
+<script src="/vendor/chart.js"></script>
+    <style>
+      :root { --user:#3b82f6; --assistant:#9ca3af; --tool:#a855f7; --skill:#a6e22e; --system:#64748b; --panel:#17191f; --border:#2b2d33; --muted:#9aa1b3; }
+      body { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; background: #101114; color: #e8e8ea; }
+      header { padding: 18px 24px; border-bottom: 1px solid #2b2d33; background: #17191f; }
+      main { padding: 20px 24px; display: grid; gap: 18px; max-width: 1680px; margin: 0 auto; }
+      section { background: #17191f; border: 1px solid #2b2d33; border-radius: 12px; padding: 16px; box-shadow: 0 16px 40px rgba(0,0,0,.18); }
+      .filters { display: grid; grid-template-columns: repeat(6, minmax(120px, 1fr)); gap: 10px; }
+      label { display: grid; gap: 4px; font-size: 12px; color: #aeb3c2; }
+      input, select, button { border: 1px solid #3b3f4b; border-radius: 8px; padding: 8px 10px; background: #0f1117; color: #f0f2f8; }
+      button { cursor: pointer; background: #314cc9; border-color: #4864e6; }
+      .tabs { display: flex; gap: 8px; }
+      .tabs button[aria-pressed="true"] { background: #5972ff; }
+      .result { border-top: 1px solid #2b2d33; padding: 12px 0; }
+      .result a, a { color: #8da2ff; }
+      .cards { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 10px; }
+      .card { background: #0f1117; border: 1px solid #2b2d33; border-radius: 10px; padding: 12px; }
+      .card strong { display:block; font-size: 26px; line-height: 1; margin-bottom: 6px; }
+      .session-layout { display: grid; grid-template-columns: 280px 1fr; gap: 0; }
+      .turn-sidebar { position: sticky; top: 70px; align-self: start; max-height: calc(100vh - 90px); overflow: auto; border-right: 1px solid var(--border); padding-right: 14px; }
+      .turn-sidebar a { display: block; color: var(--muted); text-decoration: none; padding: 8px; border-radius: 6px; border-left: 3px solid transparent; font-size: 12px; }
+      .turn-sidebar a:hover, .turn-sidebar a.active { background: #20232b; color: #fff; border-left-color: #8da2ff; }
+      .transcript { padding-left: 18px; min-width: 0; }
+      .turn-card { background: var(--panel); border: 1px solid var(--border); border-left: 4px solid var(--system); border-radius: 10px; padding: 14px 16px; margin: 0 0 14px; overflow-wrap: anywhere; }
+      .turn-card.user { border-left-color: var(--user); }
+      .turn-card.assistant { border-left-color: var(--assistant); }
+      .turn-card.tool, .turn-card.tool_result, .turn-card.bashexecution { border-left-color: var(--tool); }
+      .turn-card.summary, .turn-card.system { border-left-color: var(--system); }
+      .turn-card.highlight { outline: 2px solid #fbbf24; }
+      .turn-head { display:flex; gap:10px; align-items:center; margin-bottom: 10px; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+      .turn-content { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; line-height: 1.5; }
+      .legend { display:flex; gap:12px; flex-wrap:wrap; color: var(--muted); font-size: 12px; margin: 8px 0; }
+      .legend span::before { content:""; display:inline-block; width:10px; height:10px; margin-right:5px; border-radius:2px; background: var(--c); }
+      @media (max-width: 900px) { .session-layout { grid-template-columns: 1fr; } .turn-sidebar { position: static; max-height: 220px; border-right:0; border-bottom:1px solid var(--border); margin-bottom:16px;} }
+      .muted { color: #9aa1b3; }
+      mark, .hit { color: #fff; background: #815d00; padding: 0 2px; }
+      .chart-wrap { height: 360px; background: #0f1117; border-radius: 8px; border: 1px solid #2b2d33; padding: 10px; }
+      canvas { width: 100% !important; height: 100% !important; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { border-bottom: 1px solid #2b2d33; padding: 8px; text-align: left; }
+      @media (max-width: 900px) { .filters { grid-template-columns: 1fr 1fr; } }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Session Review</h1>
+      <p class="muted">Search sessions and inspect tool/skill usage over time. Batch runs can be included, excluded, or isolated.</p>
+    </header>
+    <main>
+      <section>
+        <div class="tabs">
+          <button id="searchTab" aria-pressed="true">Sessions</button>
+          <button id="usageTab" aria-pressed="false">Tools & Skills</button>
+        </div>
+      </section>
+      <section>
+        <div class="filters">
+          <label>Search <input id="query" placeholder="sqlite, auth, file path…" /></label>
+          <label>Provider <select id="provider"><option value="">All</option></select></label>
+          <label>CWD contains <input id="cwd" /></label>
+          <label>Path contains <input id="pathFilter" /></label>
+          <label>Start date <input id="startDate" type="date" /></label>
+          <label>End date <input id="endDate" type="date" /></label>
+          <label>Batch runs <select id="batchMode"><option value="include">Include</option><option value="exclude">Exclude</option><option value="only">Only batch</option></select></label>
+          <label id="kindWrap">Usage kind <select id="kind"><option value="tool">Tools</option><option value="skill">Skills</option></select></label>
+          <label id="bucketWrap">Graph bucket <select id="bucket"><option value="day">Day</option><option value="week">Week</option></select></label>
+          <label>Limit <input id="limit" type="number" value="100" min="1" max="1000" /></label>
+          <label>&nbsp;<button id="run">Run</button></label>
+        </div>
+        <p id="statusLine" class="muted" role="status">Ready.</p>
+      </section>
+      <section id="searchPanel"><h2>Sessions</h2><div id="results"></div></section>
+      <section id="usagePanel" hidden><h2>Tool & Skill Usage</h2><div class="legend"><span style="--c:#66d9ef">Uses</span><span style="--c:#fbbf24">Clicked/highlighted series</span></div><div class="chart-wrap"><canvas id="chart"></canvas></div><div id="usageTable"></div></section>
+      <section id="sessionPanel" hidden><h2>Session Details</h2><div id="sessionDetails"></div></section>
+    </main>
+    <script type="module" src="/client.js"></script>
+  </body>
+</html>
