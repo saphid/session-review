@@ -11,8 +11,9 @@
       :root { --user:#3b82f6; --assistant:#9ca3af; --tool:#a855f7; --skill:#a6e22e; --system:#64748b; --panel:#17191f; --border:#2b2d33; --muted:#9aa1b3; }
       body { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; background: #101114; color: #e8e8ea; }
       header { padding: 18px 24px; border-bottom: 1px solid #2b2d33; background: #17191f; }
-      main { padding: 20px 24px; display: grid; gap: 18px; max-width: 1680px; margin: 0 auto; }
-      section { background: #17191f; border: 1px solid #2b2d33; border-radius: 12px; padding: 16px; box-shadow: 0 16px 40px rgba(0,0,0,.18); }
+      .app-shell { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 18px; max-width: 2080px; margin: 0 auto; padding: 20px 24px; align-items: start; }
+      main { display: grid; gap: 18px; min-width: 0; }
+      section, .pi-sidebar { background: #17191f; border: 1px solid #2b2d33; border-radius: 12px; padding: 16px; box-shadow: 0 16px 40px rgba(0,0,0,.18); }
       .filters { display: grid; grid-template-columns: repeat(6, minmax(120px, 1fr)); gap: 10px; }
       label { display: grid; gap: 4px; font-size: 12px; color: #aeb3c2; }
       input, select, button { border: 1px solid #3b3f4b; border-radius: 8px; padding: 8px 10px; background: #0f1117; color: #f0f2f8; }
@@ -67,6 +68,12 @@
       canvas { width: 100% !important; height: 100% !important; }
       table { width: 100%; border-collapse: collapse; }
       th, td { border-bottom: 1px solid #2b2d33; padding: 8px; text-align: left; }
+      .pi-sidebar { position: sticky; top: 18px; max-height: calc(100vh - 36px); overflow: auto; }
+      .pi-sidebar h2 { margin-top: 0; }
+      .pi-sidebar textarea { width: 100%; min-height: 130px; resize: vertical; font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+      .pi-sidebar .actions { display:flex; gap:8px; align-items:center; margin-top:10px; }
+      .pi-sidebar pre { max-height: 260px; overflow:auto; padding:10px; border:1px solid var(--border); border-radius:8px; background:#0f1117; color:#c8d0e5; font-size:12px; white-space:pre-wrap; }
+      @media (max-width: 1200px) { .app-shell { grid-template-columns: 1fr; } .pi-sidebar { position: static; max-height: none; } }
       @media (max-width: 900px) { .filters { grid-template-columns: 1fr 1fr; } }
     </style>
   </head>
@@ -75,6 +82,7 @@
       <h1>Session Review</h1>
       <p class="muted">Search sessions and inspect tool/skill usage over time. Batch runs can be included, excluded, or isolated.</p>
     </header>
+    <div class="app-shell">
     <main>
       <section>
         <div class="tabs">
@@ -103,6 +111,20 @@
       <section id="usagePanel" hidden><h2>Tool & Skill Usage</h2><div class="legend"><span style="--c:#66d9ef">Uses</span><span style="--c:#fbbf24">Clicked/highlighted series</span></div><div class="chart-wrap"><canvas id="chart"></canvas></div><div id="usageTable"></div></section>
       <section id="sessionPanel" hidden><h2>Session Details</h2><div id="sessionDetails"></div></section>
     </main>
+    <aside class="pi-sidebar" aria-label="Pi sidebar agent">
+      <h2>Pi sidebar agent</h2>
+      <p class="muted">Launches the Pi TUI in Ghostty with the current screen context and related transcript/app files.</p>
+      <label>Ask Pi about this screen
+        <textarea id="piPrompt" placeholder="Ask about the selected session, visible results, subagent grouping, or how this screen works…"></textarea>
+      </label>
+      <div class="actions"><button id="piLaunch">Open Pi TUI</button></div>
+      <p id="piStatus" class="muted" role="status">Ready to launch Pi with current screen context.</p>
+      <details>
+        <summary>Context preview</summary>
+        <pre id="piContextPreview">No context yet.</pre>
+      </details>
+    </aside>
+    </div>
     <script type="module" src="/client.js"></script>
   </body>
 </html>

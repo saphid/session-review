@@ -42,7 +42,9 @@ cd /Users/alexsouthwell/Personal/Projects/session-review && PORT=8999 npm run ap
 PORT=8999 npm --prefix /Users/alexsouthwell/Personal/Projects/session-review run app
 ```
 
-The app supports session search, provider/cwd/path/date filters, grouping by working directory, agent/provider, or primary session + subagents, syntax-highlighted transcript code blocks/shell output, model input/output badges, per-turn estimated token counts, and tool/skill usage charts over time. Use the `Batch runs` filter to include all sessions, exclude likely batch/orchestration/subagent sessions, or show only those batch sessions. The primary-session grouping detects Pi nested `run-*` sessions and Claude `subagents/` sidechains, linking them to indexed parent logs when available and otherwise grouping them under a synthetic primary key from the path.
+The app supports session search, provider/cwd/path/date filters, grouping by working directory, agent/provider, or primary session + subagents, syntax-highlighted transcript code blocks/shell output, model input/output badges, per-turn estimated token counts, a right-hand Pi sidebar agent launcher, and tool/skill usage charts over time. Use the `Batch runs` filter to include all sessions, exclude likely batch/orchestration/subagent sessions, or show only those batch sessions. The primary-session grouping detects Pi nested `run-*` sessions and Claude `subagents/` sidechains, linking them to indexed parent logs when available and otherwise grouping them under a synthetic primary key from the path.
+
+The Pi sidebar writes a screen-context JSON bundle under `output/pi-sidebar/` and opens the Pi TUI in Ghostty/cmux with that context. Override launch paths with `SESSION_REVIEW_PI_BIN`, `SESSION_REVIEW_GHOSTTY_APP`, or `SESSION_REVIEW_GHOSTTY_BIN`.
 
 Run this after large ingests or code changes to rebuild tool/skill analytics for already-indexed sessions:
 

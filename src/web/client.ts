@@ -23,6 +23,9 @@ interface SessionDetails {
 let activeTab: "search" | "usage" | "session" = location.pathname.startsWith("/session/") ? "session" : "search";
 let usageChart: ChartInstance | null = null;
 let turnChart: ChartInstance | null = null;
+let lastSearchRows: SearchResult[] = [];
+let currentSessionDetails: SessionDetails | null = null;
+let lastUsageResponse: UsageResponse | null = null;
 
 const searchTab = element<HTMLButtonElement>("searchTab");
 const usageTab = element<HTMLButtonElement>("usageTab");
@@ -30,10 +33,12 @@ const searchPanel = element<HTMLElement>("searchPanel");
 const usagePanel = element<HTMLElement>("usagePanel");
 const sessionPanel = element<HTMLElement>("sessionPanel");
 const runButton = element<HTMLButtonElement>("run");
+const piLaunchButton = element<HTMLButtonElement>("piLaunch");
 
 searchTab.addEventListener("click", () => setTab("search"));
 usageTab.addEventListener("click", () => setTab("usage"));
 runButton.addEventListener("click", () => void run());
+piLaunchButton.addEventListener("click", () => void launchPiSidebar());
 window.addEventListener("popstate", () => { activeTab = location.pathname.startsWith("/session/") ? "session" : activeTab === "session" ? "search" : activeTab; void run(); });
 void init();
 
@@ -75,6 +80,10 @@ async function run(): Promise<void> {
 
 async function runSearch(started: number): Promise<void> {
   const rows = await getJson<SearchResult[]>(`/api/search?${params().toString()}`);
+  lastSearchRows = rows;
+  currentSessionDetails = null;
+  lastUsageResponse = null;
+  updatePiContextPreview();
   const target = element<HTMLDivElement>("results");
   target.replaceChildren();
   if (!rows.length) { target.textContent = "No matching sessions."; setStatus(`Search completed in ${elapsed(started)} and returned 0 sessions.`); return; }
@@ -95,6 +104,9 @@ async function runUsage(started: number): Promise<void> {
   query.set("kind", value("kind"));
   query.set("bucket", value("bucket"));
   const data = await getJson<UsageResponse>(`/api/usage?${query.toString()}`);
+  lastUsageResponse = data;
+  currentSessionDetails = null;
+  updatePiContextPreview();
   usageChart = replaceChart(usageChart, element<HTMLCanvasElement>("chart"), usageChartConfig(data.timeline, data.summary.slice(0, 8).map((row) => row.name)));
   drawUsageTable(data.summary, element<HTMLDivElement>("usageTable"));
   setStatus(`Usage query completed in ${elapsed(started)} with ${data.summary.length} names and ${data.timeline.length} graph points.`);
@@ -103,6 +115,9 @@ async function runUsage(started: number): Promise<void> {
 async function runSession(started: number): Promise<void> {
   const id = decodeURIComponent(location.pathname.replace(/^\/session\//, ""));
   const details = await getJson<SessionDetails>(`/api/session?id=${encodeURIComponent(id)}`);
+  currentSessionDetails = details;
+  lastUsageResponse = null;
+  updatePiContextPreview();
   renderSession(details);
   setStatus(`Session loaded in ${elapsed(started)}.`);
 }
@@ -171,6 +186,131 @@ function searchGroupNode(group: SearchGroup, mode: GroupMode): HTMLElement {
 function newestTimestamp(rows: SearchResult[]): string {
   return rows.map((row) => row.startedAt ?? "").sort().at(-1) ?? "";
 }
+
+async function launchPiSidebar(): Promise<void> {
+  piLaunchButton.disabled = true;
+  setPiStatus("Launching Pi in Ghostty…");
+  try {
+    const payload = piPayload();
+    const result = await postJson<{ ok: boolean; message: string; contextPath: string; files: string[] }>("/api/pi/launch", payload);
+    setPiStatus(`${result.message} Context: ${result.contextPath}. ${result.files.length} screen files attached.`);
+  } catch (error) {
+    setPiStatus(`Failed to launch Pi: ${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    piLaunchButton.disabled = false;
+  }
+}
+
+function piPayload(): { message: string; screen: unknown; files: string[] } {
+  const screen = screenContext();
+  return { message: value("piPrompt"), screen, files: relatedFiles() };
+}
+
+function screenContext(): unknown {
+  const filters = {
+    query: value("query"),
+    provider: value("provider"),
+    cwd: value("cwd"),
+    path: value("pathFilter"),
+    startDate: value("startDate"),
+    endDate: value("endDate"),
+    batchMode: value("batchMode"),
+    groupBy: value("groupBy"),
+    limit: value("limit"),
+  };
+  if (activeTab === "session" && currentSessionDetails) {
+    return {
+      tab: activeTab,
+      url: location.href,
+      filters,
+      session: summarizeSession(currentSessionDetails),
+    };
+  }
+  if (activeTab === "usage" && lastUsageResponse) {
+    return {
+      tab: activeTab,
+      url: location.href,
+      filters,
+      usageSummary: lastUsageResponse.summary.slice(0, 40),
+      usageTimeline: lastUsageResponse.timeline.slice(0, 80),
+    };
+  }
+  return {
+    tab: activeTab,
+    url: location.href,
+    filters,
+    searchResults: lastSearchRows.slice(0, 80).map(summarizeSearchResult),
+    groupMode: groupMode(),
+  };
+}
+
+function summarizeSession(details: SessionDetails): unknown {
+  return {
+    sessionId: details.sessionId,
+    provider: details.provider,
+    title: details.title,
+    startedAt: details.startedAt,
+    cwd: details.cwd,
+    path: details.path,
+    purpose: details.purpose,
+    turnCount: details.turnCount,
+    toolUseCount: details.toolUseCount,
+    skillUseCount: details.skillUseCount,
+    usage: details.usage.slice(0, 40),
+    linkedSessions: details.linkedSessions.map(summarizeSearchResult),
+    visibleTranscriptSample: details.transcript.slice(0, 60).map((turn) => ({
+      index: turn.index,
+      role: turn.role,
+      tokenEstimate: estimateTokens(turn.content),
+      content: truncateForContext(turn.content, 1600),
+    })),
+  };
+}
+
+function summarizeSearchResult(row: SearchResult): unknown {
+  return {
+    provider: row.provider,
+    sessionId: row.sessionId,
+    title: row.title,
+    startedAt: row.startedAt,
+    cwd: row.cwd,
+    path: row.path,
+    snippet: row.snippet,
+    tokenEstimate: row.tokenEstimate,
+    isBatch: row.isBatch,
+    isSubagent: row.isSubagent,
+    parentSessionId: row.parentSessionId,
+    parentTitle: row.parentTitle,
+    groupLabel: row.groupLabel,
+    groupReason: row.groupReason,
+  };
+}
+
+function relatedFiles(): string[] {
+  const files = new Set<string>();
+  for (const row of lastSearchRows.slice(0, 80)) files.add(row.path);
+  if (currentSessionDetails) {
+    files.add(currentSessionDetails.path);
+    for (const row of currentSessionDetails.linkedSessions) files.add(row.path);
+  }
+  return [...files].filter(Boolean);
+}
+
+function updatePiContextPreview(): void {
+  const files = relatedFiles();
+  const preview = {
+    tab: activeTab,
+    files: files.slice(0, 20),
+    fileCount: files.length,
+    currentSession: currentSessionDetails ? { id: currentSessionDetails.sessionId, title: currentSessionDetails.title, path: currentSessionDetails.path } : null,
+    searchResults: activeTab === "search" ? lastSearchRows.length : undefined,
+    usageRows: activeTab === "usage" ? lastUsageResponse?.summary.length ?? 0 : undefined,
+  };
+  element<HTMLPreElement>("piContextPreview").textContent = JSON.stringify(preview, null, 2);
+}
+
+function setPiStatus(message: string): void { element<HTMLElement>("piStatus").textContent = message; }
+function truncateForContext(text: string, max: number): string { return text.length <= max ? text : `${text.slice(0, max)}…`; }
 
 function renderSession(details: SessionDetails): void {
   const target = element<HTMLDivElement>("sessionDetails");
@@ -341,6 +481,7 @@ function renderLinked(rows: SearchResult[], target: HTMLDivElement): void { if (
 function params(): URLSearchParams { const query = new URLSearchParams(); for (const key of ["query", "provider", "cwd", "startDate", "endDate", "batchMode", "limit"] as const) { const val = value(key); if (val) query.set(key, val); } const pathFilter = value("pathFilter"); if (pathFilter) query.set("path", pathFilter); return query; }
 function groupMode(): GroupMode { const raw = value("groupBy"); return raw === "cwd" || raw === "provider" || raw === "primary" ? raw : "none"; }
 async function getJson<T>(url: string): Promise<T> { const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 30_000); try { const response = await fetch(url, { signal: controller.signal }); if (!response.ok) throw new Error(await response.text()); return response.json() as Promise<T>; } finally { clearTimeout(timeout); } }
+async function postJson<T>(url: string, body: unknown): Promise<T> { const response = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }); if (!response.ok) throw new Error(await response.text()); return response.json() as Promise<T>; }
 function setBusy(busy: boolean, message?: string): void { runButton.disabled = busy; if (message) setStatus(message); }
 function setStatus(message: string): void { element<HTMLElement>("statusLine").textContent = message; }
 function elapsed(started: number): string { return `${Math.round(performance.now() - started)}ms`; }
