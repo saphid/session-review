@@ -226,7 +226,9 @@ export function searchFilteredSessions(db: SessionReviewDb, filters: SessionFilt
   if (!filters.query) {
     const rows = db
       .prepare(`
-        SELECT s.provider, s.id AS sessionId, s.title, s.started_at AS startedAt, s.cwd, s.path, s.is_batch AS isBatch, NULL AS snippet
+        SELECT s.provider, s.id AS sessionId, s.title, s.started_at AS startedAt, s.cwd, s.path, s.is_batch AS isBatch,
+               CAST(s.size_bytes / 4 AS INTEGER) AS tokenEstimate,
+               NULL AS snippet
         FROM sessions s
         ${sessionClauses.length ? `WHERE ${sessionClauses.join(" AND ")}` : ""}
         ORDER BY s.started_at DESC
@@ -249,6 +251,7 @@ export function searchFilteredSessions(db: SessionReviewDb, filters: SessionFilt
         LIMIT @limit
       )
       SELECT s.provider, s.id AS sessionId, s.title, s.started_at AS startedAt, s.cwd, s.path, s.is_batch AS isBatch,
+             CAST(s.size_bytes / 4 AS INTEGER) AS tokenEstimate,
              snippet(sessions_fts, 4, '[', ']', ' … ', 24) AS snippet
       FROM matched
       JOIN sessions_fts ON sessions_fts.rowid = matched.rowid
@@ -271,6 +274,7 @@ function enrichSearchResults(db: SessionReviewDb, rows: RawSearchResult[]): Sear
       cwd: row.cwd,
       path: row.path,
       snippet: row.snippet,
+      tokenEstimate: row.tokenEstimate,
       isBatch: row.isBatch === 1,
       ...parent,
     };

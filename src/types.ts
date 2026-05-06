@@ -27,6 +27,7 @@ export interface SearchResult {
   cwd: string | null;
   path: string;
   snippet: string | null;
+  tokenEstimate: number;
   isBatch: boolean;
   isSubagent: boolean;
   parentSessionId: string | null;

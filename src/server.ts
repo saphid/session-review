@@ -22,6 +22,8 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
   if (url.pathname === "/" || url.pathname.startsWith("/session/")) return sendFile(response, path.join(rootDir, "src", "web", "index.html"), "text/html");
   if (url.pathname === "/client.js") return sendFile(response, path.join(rootDir, "dist", "web", "client.js"), "text/javascript");
   if (url.pathname === "/vendor/chart.js") return sendFile(response, path.join(rootDir, "node_modules", "chart.js", "dist", "chart.umd.js"), "text/javascript");
+  if (url.pathname === "/vendor/highlight.js") return sendFile(response, path.join(rootDir, "node_modules", "@highlightjs", "cdn-assets", "highlight.min.js"), "text/javascript");
+  if (url.pathname === "/vendor/highlight.css") return sendFile(response, path.join(rootDir, "node_modules", "@highlightjs", "cdn-assets", "styles", "github-dark.min.css"), "text/css");
   if (url.pathname === "/api/filters") return sendJson(response, 200, filterOptions(db));
   if (url.pathname === "/api/session") {
     const id = url.searchParams.get("id");

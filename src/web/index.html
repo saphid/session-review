@@ -4,7 +4,9 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Session Review</title>
-<script src="/vendor/chart.js"></script>
+    <link rel="stylesheet" href="/vendor/highlight.css" />
+    <script src="/vendor/chart.js"></script>
+    <script src="/vendor/highlight.js"></script>
     <style>
       :root { --user:#3b82f6; --assistant:#9ca3af; --tool:#a855f7; --skill:#a6e22e; --system:#64748b; --panel:#17191f; --border:#2b2d33; --muted:#9aa1b3; }
       body { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; background: #101114; color: #e8e8ea; }
@@ -19,6 +21,8 @@
       .tabs button[aria-pressed="true"] { background: #5972ff; }
       .result { border-top: 1px solid #2b2d33; padding: 12px 0; }
       .result a, a { color: #8da2ff; }
+      .result-head { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
+      .token-count { color: var(--muted); font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: nowrap; }
       .group { border-top: 1px solid #2b2d33; padding: 10px 0; }
       .group > summary { cursor: pointer; list-style: none; display: flex; justify-content: space-between; gap: 12px; align-items: baseline; padding: 10px 12px; border-radius: 10px; background: #0f1117; border: 1px solid #2b2d33; }
       .group > summary::-webkit-details-marker { display: none; }
@@ -40,8 +44,20 @@
       .turn-card.tool, .turn-card.tool_result, .turn-card.bashexecution { border-left-color: var(--tool); }
       .turn-card.summary, .turn-card.system { border-left-color: var(--system); }
       .turn-card.highlight { outline: 2px solid #fbbf24; }
-      .turn-head { display:flex; gap:10px; align-items:center; margin-bottom: 10px; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
-      .turn-content { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; line-height: 1.5; }
+      .turn-head { display:flex; justify-content:space-between; gap:12px; align-items:center; margin-bottom: 10px; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+      .turn-title, .turn-stats { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+      .turn-stats { justify-content:flex-end; white-space:nowrap; }
+      .io-badge { display:inline-flex; border:1px solid #3b3f4b; border-radius:999px; padding:2px 7px; font-size:11px; letter-spacing:0; text-transform:none; }
+      .io-input { color:#93c5fd; border-color:#315f9e; background:rgba(59,130,246,.08); }
+      .io-output { color:#c4b5fd; border-color:#6d4db3; background:rgba(168,85,247,.08); }
+      .io-context { color:#d1d5db; border-color:#4b5563; background:rgba(107,114,128,.08); }
+      .turn-content { font-size: 13px; line-height: 1.55; }
+      .turn-text { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
+      .code-block { margin: 12px 0; border: 1px solid #34384a; border-radius: 10px; overflow: hidden; background: #0d1117; }
+      .code-block figcaption { display: flex; justify-content: space-between; gap: 8px; padding: 7px 10px; border-bottom: 1px solid #34384a; background: #111827; color: #c8d0e5; font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+      .code-block pre { margin: 0; padding: 12px 14px; overflow: auto; white-space: pre; }
+      .code-block code.hljs { display: block; padding: 0; background: transparent; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+      .shell-block figcaption { background: #182036; color: #9dd6ff; }
       .legend { display:flex; gap:12px; flex-wrap:wrap; color: var(--muted); font-size: 12px; margin: 8px 0; }
       .legend span::before { content:""; display:inline-block; width:10px; height:10px; margin-right:5px; border-radius:2px; background: var(--c); }
       @media (max-width: 900px) { .session-layout { grid-template-columns: 1fr; } .turn-sidebar { position: static; max-height: 220px; border-right:0; border-bottom:1px solid var(--border); margin-bottom:16px;} }

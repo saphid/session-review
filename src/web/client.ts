@@ -4,9 +4,12 @@ type UsageKind = "tool" | "skill";
 type ChartInstance = { destroy(): void };
 type ChartData = { labels: string[]; datasets: Array<{ label: string; data: number[]; backgroundColor?: string; borderColor?: string; borderWidth?: number }> };
 type ChartConfig = { type: "bar" | "line"; data: ChartData; options: Record<string, unknown> };
+type HighlightResult = { value: string; language?: string };
+type HighlightJs = { getLanguage(name: string): unknown; highlight(code: string, options: { language: string; ignoreIllegals: boolean }): HighlightResult; highlightAuto(code: string, languages?: string[]): HighlightResult };
 declare const Chart: new (canvas: HTMLCanvasElement, config: ChartConfig) => ChartInstance;
+declare const hljs: HighlightJs;
 
-interface SearchResult { provider: ProviderId; sessionId: string; title: string | null; startedAt: string | null; cwd: string | null; path: string; snippet: string | null; reason?: string; isBatch?: boolean; isSubagent?: boolean; parentSessionId?: string | null; parentTitle?: string | null; groupKey?: string; groupLabel?: string; groupReason?: string; }
+interface SearchResult { provider: ProviderId; sessionId: string; title: string | null; startedAt: string | null; cwd: string | null; path: string; snippet: string | null; reason?: string; tokenEstimate?: number; isBatch?: boolean; isSubagent?: boolean; parentSessionId?: string | null; parentTitle?: string | null; groupKey?: string; groupLabel?: string; groupReason?: string; }
 type GroupMode = "none" | "cwd" | "provider" | "primary";
 interface SearchGroup { key: string; label: string; reason: string; rows: SearchResult[]; }
 interface UsagePoint { bucket: string; name: string; count: number; sessions: number; }
@@ -108,7 +111,7 @@ function searchResultNode(row: SearchResult): HTMLElement {
   const item = document.createElement("div");
   item.className = "result";
   const badges = `${row.isSubagent ? '<span class="badge">subagent</span>' : ""}${row.isBatch ? '<span class="badge">batch-like</span>' : ""}`;
-  item.innerHTML = `<strong><a href="/session/${encodeURIComponent(row.sessionId)}">[${escapeHtml(row.provider)}] ${escapeHtml(row.title ?? "Untitled")}</a>${badges}</strong><div class="muted">${escapeHtml(row.startedAt ?? "unknown date")}${row.cwd ? ` · ${escapeHtml(row.cwd)}` : ""}</div>${row.isSubagent ? `<div class="muted">Grouped under: ${escapeHtml(row.groupLabel ?? row.parentTitle ?? "primary session")}</div>` : ""}<div class="muted">${escapeHtml(row.path)}</div><p>${highlight(row.snippet ?? "")}</p>`;
+  item.innerHTML = `<div class="result-head"><strong><a href="/session/${encodeURIComponent(row.sessionId)}">[${escapeHtml(row.provider)}] ${escapeHtml(row.title ?? "Untitled")}</a>${badges}</strong><span class="token-count" title="Estimated from indexed transcript text">${formatNumber(row.tokenEstimate ?? estimateTokens(`${row.title ?? ""}\n${row.snippet ?? ""}`))} tokens</span></div><div class="muted">${escapeHtml(row.startedAt ?? "unknown date")}${row.cwd ? ` · ${escapeHtml(row.cwd)}` : ""}</div>${row.isSubagent ? `<div class="muted">Grouped under: ${escapeHtml(row.groupLabel ?? row.parentTitle ?? "primary session")}</div>` : ""}<div class="muted">${escapeHtml(row.path)}</div><p>${highlight(row.snippet ?? "")}</p>`;
   item.querySelector("a")?.addEventListener("click", (event) => { event.preventDefault(); history.pushState(null, "", `/session/${encodeURIComponent(row.sessionId)}`); setTab("session"); });
   return item;
 }
@@ -202,10 +205,122 @@ function renderTranscript(items: TranscriptItem[]): void {
     const card = document.createElement("article");
     card.id = id;
     card.className = `turn-card ${cssRole(item.role)}`;
-    card.innerHTML = `<div class="turn-head"><strong>#${item.index}</strong><span>${escapeHtml(item.role)}</span><span>${item.toolCount} tools</span><span>${item.skillCount} skills</span></div><div class="turn-content">${escapeHtml(item.content)}</div>`;
+    const direction = modelDirection(item.role);
+    const head = document.createElement("div");
+    head.className = "turn-head";
+    head.innerHTML = `<div class="turn-title"><strong>#${item.index}</strong><span>${escapeHtml(item.role)}</span><span class="io-badge ${direction.className}">${escapeHtml(direction.label)}</span></div><div class="turn-stats"><span>${item.toolCount} tools</span><span>${item.skillCount} skills</span><span title="Estimated from text; raw provider token usage is not always available per turn.">${formatNumber(estimateTokens(item.content))} tokens</span></div>`;
+    const content = document.createElement("div");
+    content.className = "turn-content";
+    content.append(renderFormattedContent(item));
+    card.append(head, content);
     transcript.append(card);
   }
 }
+
+function renderFormattedContent(item: TranscriptItem): HTMLElement {
+  const wrapper = document.createElement("div");
+  const blocks = splitCodeFences(item.content, item.role);
+  for (const block of blocks) {
+    if (block.kind === "text") {
+      const text = document.createElement("div");
+      text.className = "turn-text";
+      text.textContent = block.text;
+      wrapper.append(text);
+    } else {
+      wrapper.append(codeBlock(block.code, block.language, block.source));
+    }
+  }
+  return wrapper;
+}
+
+type FormattedBlock = { kind: "text"; text: string } | { kind: "code"; code: string; language: string; source: "fence" | "shell" | "role" };
+
+function splitCodeFences(content: string, role: string): FormattedBlock[] {
+  const fenced = [...content.matchAll(/```([\w#+.-]*)[^\n]*\n([\s\S]*?)```/g)];
+  if (fenced.length === 0) {
+    const shell = shellSnippet(content, role);
+    if (shell) return shell;
+    return [{ kind: "text", text: content }];
+  }
+
+  const blocks: FormattedBlock[] = [];
+  let cursor = 0;
+  for (const match of fenced) {
+    const index = match.index ?? 0;
+    if (index > cursor) blocks.push({ kind: "text", text: content.slice(cursor, index) });
+    blocks.push({ kind: "code", code: match[2] ?? "", language: normalizeLanguage(match[1] || "text"), source: "fence" });
+    cursor = index + match[0].length;
+  }
+  if (cursor < content.length) blocks.push({ kind: "text", text: content.slice(cursor) });
+  return blocks.filter((block) => block.kind === "code" || block.text.length > 0);
+}
+
+function shellSnippet(content: string, role: string): FormattedBlock[] | null {
+  const trimmed = content.trimEnd();
+  if (!trimmed) return [{ kind: "text", text: content }];
+  const lowerRole = role.toLowerCase();
+  if (lowerRole === "bashexecution" || lowerRole === "tool" || lowerRole === "tool_result") {
+    if (/^(\$|>|❯)\s|\n(\$|>|❯)\s|\b(npm|pnpm|yarn|git|gh|curl|ssh|rsync|python3?|node|tsx|tsc|pytest|cargo|docker|kubectl|sqlite3)\b/.test(trimmed)) {
+      return [{ kind: "code", code: trimmed, language: "bash", source: "role" }];
+    }
+  }
+  if (/^(\$|>|❯)\s.+/m.test(trimmed)) return [{ kind: "code", code: trimmed, language: "bash", source: "shell" }];
+  return null;
+}
+
+function codeBlock(code: string, language: string, source: FormattedBlock extends infer T ? T extends { kind: "code"; source: infer S } ? S : never : never): HTMLElement {
+  const figure = document.createElement("figure");
+  figure.className = `code-block ${language === "bash" || language === "shell" ? "shell-block" : ""}`;
+  const caption = document.createElement("figcaption");
+  const displayLanguage = languageLabel(language);
+  caption.innerHTML = `<span>${escapeHtml(displayLanguage)}</span><span>${source === "fence" ? "fenced code" : source === "shell" ? "detected shell" : "tool/shell output"}</span>`;
+  const pre = document.createElement("pre");
+  const codeEl = document.createElement("code");
+  codeEl.className = `language-${escapeHtml(language)}`;
+  codeEl.innerHTML = highlightedCode(code, language);
+  pre.append(codeEl);
+  figure.append(caption, pre);
+  return figure;
+}
+
+function highlightedCode(code: string, language: string): string {
+  const highlighter = typeof hljs === "undefined" ? null : hljs;
+  if (!highlighter) return escapeHtml(code);
+  try {
+    if (language !== "text" && highlighter.getLanguage(language)) return highlighter.highlight(code, { language, ignoreIllegals: true }).value;
+    return highlighter.highlightAuto(code, ["bash", "shell", "typescript", "javascript", "json", "python", "sql", "yaml", "markdown", "html", "css", "diff"]).value;
+  } catch {
+    return escapeHtml(code);
+  }
+}
+
+function normalizeLanguage(language: string): string {
+  const lower = language.trim().toLowerCase();
+  const aliases: Record<string, string> = { sh: "bash", shell: "bash", zsh: "bash", ts: "typescript", js: "javascript", py: "python", yml: "yaml", md: "markdown", plaintext: "text", txt: "text" };
+  return aliases[lower] ?? (lower || "text");
+}
+
+function languageLabel(language: string): string {
+  if (language === "bash") return "Shell";
+  if (language === "text") return "Text";
+  return language.replace(/^./, (char) => char.toUpperCase());
+}
+
+function modelDirection(role: string): { label: string; className: string } {
+  const lower = role.toLowerCase();
+  if (lower === "assistant" || lower === "tool" || lower === "bashexecution") return { label: "model output", className: "io-output" };
+  if (lower === "user" || lower === "system" || lower === "tool_result") return { label: "model input", className: "io-input" };
+  return { label: "context", className: "io-context" };
+}
+
+function estimateTokens(text: string): number {
+  if (!text.trim()) return 0;
+  const words = text.trim().split(/\s+/).length;
+  const chars = text.length / 4;
+  return Math.max(1, Math.round((words + chars) / 2));
+}
+
+function formatNumber(value: number): string { return value.toLocaleString("en-US"); }
 
 function usageChartConfig(points: UsagePoint[], names: string[]): ChartConfig {
   const labels = [...new Set(points.map((point) => point.bucket))].sort();
