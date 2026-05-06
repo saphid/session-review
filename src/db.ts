@@ -61,6 +61,19 @@ export interface LinkedSession {
   reason: string;
 }
 
+type RawSearchResult = Omit<SearchResult, "isBatch" | "isSubagent" | "parentSessionId" | "parentTitle" | "groupKey" | "groupLabel" | "groupReason"> & { isBatch: number };
+
+type ParentLookupRow = { sessionId: string; title: string | null; startedAt: string | null; path: string };
+
+type ParentInfo = {
+  isSubagent: boolean;
+  parentSessionId: string | null;
+  parentTitle: string | null;
+  groupKey: string;
+  groupLabel: string;
+  groupReason: string;
+};
+
 export interface SessionDetails {
   sessionId: string;
   provider: string;
@@ -211,21 +224,22 @@ export function searchFilteredSessions(db: SessionReviewDb, filters: SessionFilt
   const params: Record<string, string | number | null> = { limit: filters.limit };
   const sessionClauses = sessionWhereClauses(filters, params);
   if (!filters.query) {
-    return db
+    const rows = db
       .prepare(`
-        SELECT s.provider, s.id AS sessionId, s.title, s.started_at AS startedAt, s.cwd, s.path, NULL AS snippet
+        SELECT s.provider, s.id AS sessionId, s.title, s.started_at AS startedAt, s.cwd, s.path, s.is_batch AS isBatch, NULL AS snippet
         FROM sessions s
         ${sessionClauses.length ? `WHERE ${sessionClauses.join(" AND ")}` : ""}
         ORDER BY s.started_at DESC
         LIMIT @limit
       `)
-      .all(params) as SearchResult[];
+      .all(params) as RawSearchResult[];
+    return enrichSearchResults(db, rows);
   }
 
   params.query = filters.query;
   // Limit FTS matches before computing snippets. On large transcript stores,
   // snippet() across every match can make the UI look hung.
-  return db
+  const rows = db
     .prepare(`
       WITH matched AS (
         SELECT rowid, session_id, rank
@@ -234,7 +248,7 @@ export function searchFilteredSessions(db: SessionReviewDb, filters: SessionFilt
         ORDER BY rank
         LIMIT @limit
       )
-      SELECT s.provider, s.id AS sessionId, s.title, s.started_at AS startedAt, s.cwd, s.path,
+      SELECT s.provider, s.id AS sessionId, s.title, s.started_at AS startedAt, s.cwd, s.path, s.is_batch AS isBatch,
              snippet(sessions_fts, 4, '[', ']', ' … ', 24) AS snippet
       FROM matched
       JOIN sessions_fts ON sessions_fts.rowid = matched.rowid
@@ -242,7 +256,115 @@ export function searchFilteredSessions(db: SessionReviewDb, filters: SessionFilt
       ${sessionClauses.length ? `WHERE ${sessionClauses.join(" AND ")}` : ""}
       ORDER BY matched.rank
     `)
-    .all(params) as SearchResult[];
+    .all(params) as RawSearchResult[];
+  return enrichSearchResults(db, rows);
+}
+
+function enrichSearchResults(db: SessionReviewDb, rows: RawSearchResult[]): SearchResult[] {
+  return rows.map((row) => {
+    const parent = inferParentInfo(db, row);
+    return {
+      provider: row.provider,
+      sessionId: row.sessionId,
+      title: row.title,
+      startedAt: row.startedAt,
+      cwd: row.cwd,
+      path: row.path,
+      snippet: row.snippet,
+      isBatch: row.isBatch === 1,
+      ...parent,
+    };
+  });
+}
+
+function inferParentInfo(db: SessionReviewDb, row: RawSearchResult | { sessionId: string; provider: ProviderId | string; title: string | null; path: string }): ParentInfo {
+  const parent = findParentSession(db, row.sessionId, row.path);
+  if (parent) {
+    return {
+      isSubagent: true,
+      parentSessionId: parent.sessionId,
+      parentTitle: parent.title,
+      groupKey: `primary:${parent.sessionId}`,
+      groupLabel: parent.title?.trim() ? `Primary: ${parent.title.trim()}` : `Primary session ${shortId(parent.sessionId)}`,
+      groupReason: "subagent path points at this primary session",
+    };
+  }
+
+  const synthetic = syntheticParentFromPath(row.provider, row.path);
+  if (synthetic) return synthetic;
+
+  return {
+    isSubagent: false,
+    parentSessionId: null,
+    parentTitle: null,
+    groupKey: `primary:${row.sessionId}`,
+    groupLabel: row.title?.trim() ? row.title.trim() : `Session ${shortId(row.sessionId)}`,
+    groupReason: "primary session",
+  };
+}
+
+function findParentSession(db: SessionReviewDb, sessionId: string, filePath: string): ParentLookupRow | null {
+  const candidates = parentPathCandidates(filePath);
+  if (candidates.length === 0) return null;
+  const lookup = db.prepare("SELECT id AS sessionId, title, started_at AS startedAt, path FROM sessions WHERE path = ? AND id != ? LIMIT 1");
+  for (const candidate of candidates) {
+    const parent = lookup.get(candidate, sessionId) as ParentLookupRow | undefined;
+    if (parent) return parent;
+  }
+  return null;
+}
+
+function parentPathCandidates(filePath: string): string[] {
+  const candidates = new Set<string>();
+  const subagentsIndex = filePath.indexOf("/subagents/");
+  if (subagentsIndex > 0) candidates.add(`${filePath.slice(0, subagentsIndex)}.jsonl`);
+
+  const segments = filePath.split("/");
+  for (let index = 1; index < segments.length - 1; index++) {
+    const segment = segments[index];
+    if (!segment || segment.endsWith(".jsonl")) continue;
+    const hasChildRun = segments.slice(index + 1, -1).some((part) => /^run-\d+$/.test(part) || part === "subagents");
+    if (!hasChildRun) continue;
+    candidates.add(`${segments.slice(0, index).join("/")}/${segment}.jsonl`);
+  }
+  candidates.delete(filePath);
+  return [...candidates];
+}
+
+function syntheticParentFromPath(provider: ProviderId | string, filePath: string): ParentInfo | null {
+  const subagentsIndex = filePath.indexOf("/subagents/");
+  if (subagentsIndex > 0) {
+    const parentStem = path.basename(filePath.slice(0, subagentsIndex));
+    return {
+      isSubagent: true,
+      parentSessionId: null,
+      parentTitle: null,
+      groupKey: `synthetic-primary:${provider}:${parentStem}`,
+      groupLabel: `${provider} primary ${parentStem}`,
+      groupReason: "subagent folder names the primary session, but the primary log was not indexed",
+    };
+  }
+
+  const segments = filePath.split("/");
+  const runIndex = segments.findIndex((part) => /^run-\d+$/.test(part));
+  if (runIndex > 1) {
+    const parentStem = segments[runIndex - 2];
+    if (parentStem) {
+      return {
+        isSubagent: true,
+        parentSessionId: null,
+        parentTitle: null,
+        groupKey: `synthetic-primary:${provider}:${parentStem}`,
+        groupLabel: `${provider} primary ${parentStem}`,
+        groupReason: "nested run folder looks like a delegated/subagent session",
+      };
+    }
+  }
+  return null;
+}
+
+function shortId(sessionId: string): string {
+  return sessionId.length <= 18 ? sessionId : `${sessionId.slice(0, 18)}…`;
 }
 
 export function usageSummary(db: SessionReviewDb, kind: UsageKind, filters: Omit<SessionFilters, "query" | "limit">): UsageSummaryRow[] {
@@ -399,14 +521,33 @@ function findLinkedSessions(db: SessionReviewDb, sessionId: string, body: string
       .all(...ids, sessionId) as Array<Omit<LinkedSession, "reason">>;
     for (const row of mentioned) linked.set(row.sessionId, { ...row, reason: "mentioned in transcript" });
   }
-  const subagentRoot = currentPath.includes("/subagents/") ? `${currentPath.slice(0, currentPath.indexOf("/subagents/") + "/subagents/".length)}%` : null;
-  if (subagentRoot) {
+
+  const parent = findParentSession(db, sessionId, currentPath);
+  if (parent) {
+    const parentRow = db
+      .prepare("SELECT id AS sessionId, provider, title, started_at AS startedAt, path FROM sessions WHERE id = ? LIMIT 1")
+      .get(parent.sessionId) as Omit<LinkedSession, "reason"> | undefined;
+    if (parentRow) linked.set(parentRow.sessionId, { ...parentRow, reason: "primary session for this subagent" });
+  }
+
+  for (const siblingRoot of siblingPathPrefixes(currentPath)) {
     const nearby = db
       .prepare("SELECT id AS sessionId, provider, title, started_at AS startedAt, path FROM sessions WHERE id != ? AND path LIKE ? ORDER BY started_at DESC LIMIT 25")
-      .all(sessionId, subagentRoot) as Array<Omit<LinkedSession, "reason">>;
-    for (const row of nearby) if (!linked.has(row.sessionId)) linked.set(row.sessionId, { ...row, reason: "same subagent run folder" });
+      .all(sessionId, `${siblingRoot}%`) as Array<Omit<LinkedSession, "reason">>;
+    for (const row of nearby) if (!linked.has(row.sessionId)) linked.set(row.sessionId, { ...row, reason: "same delegated/subagent group" });
   }
   return [...linked.values()].slice(0, 50);
+}
+
+function siblingPathPrefixes(filePath: string): string[] {
+  const prefixes = new Set<string>();
+  const subagentsIndex = filePath.indexOf("/subagents/");
+  if (subagentsIndex > 0) prefixes.add(filePath.slice(0, subagentsIndex + "/subagents/".length));
+
+  const segments = filePath.split("/");
+  const runIndex = segments.findIndex((part) => /^run-\d+$/.test(part));
+  if (runIndex > 1) prefixes.add(`${segments.slice(0, runIndex - 1).join("/")}/`);
+  return [...prefixes];
 }
 
 function extractSessionIds(body: string): string[] {

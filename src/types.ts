@@ -27,6 +27,13 @@ export interface SearchResult {
   cwd: string | null;
   path: string;
   snippet: string | null;
+  isBatch: boolean;
+  isSubagent: boolean;
+  parentSessionId: string | null;
+  parentTitle: string | null;
+  groupKey: string;
+  groupLabel: string;
+  groupReason: string;
 }
 
 export interface IngestSummary {

@@ -19,6 +19,13 @@
       .tabs button[aria-pressed="true"] { background: #5972ff; }
       .result { border-top: 1px solid #2b2d33; padding: 12px 0; }
       .result a, a { color: #8da2ff; }
+      .group { border-top: 1px solid #2b2d33; padding: 10px 0; }
+      .group > summary { cursor: pointer; list-style: none; display: flex; justify-content: space-between; gap: 12px; align-items: baseline; padding: 10px 12px; border-radius: 10px; background: #0f1117; border: 1px solid #2b2d33; }
+      .group > summary::-webkit-details-marker { display: none; }
+      .group-title { font-weight: 700; }
+      .group-meta { color: var(--muted); font-size: 12px; white-space: nowrap; }
+      .group-rows { padding-left: 14px; }
+      .badge { display:inline-flex; align-items:center; border:1px solid #3b3f4b; border-radius:999px; padding:2px 7px; color:#c8d0e5; font-size:11px; margin-left:6px; }
       .cards { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 10px; }
       .card { background: #0f1117; border: 1px solid #2b2d33; border-radius: 10px; padding: 12px; }
       .card strong { display:block; font-size: 26px; line-height: 1; margin-bottom: 6px; }
@@ -68,6 +75,7 @@
           <label>Start date <input id="startDate" type="date" /></label>
           <label>End date <input id="endDate" type="date" /></label>
           <label>Batch runs <select id="batchMode"><option value="include">Include</option><option value="exclude">Exclude</option><option value="only">Only batch</option></select></label>
+          <label>Group by <select id="groupBy"><option value="none">None</option><option value="cwd">Working directory</option><option value="provider">Agent/provider</option><option value="primary">Primary + subagents</option></select></label>
           <label id="kindWrap">Usage kind <select id="kind"><option value="tool">Tools</option><option value="skill">Skills</option></select></label>
           <label id="bucketWrap">Graph bucket <select id="bucket"><option value="day">Day</option><option value="week">Week</option></select></label>
           <label>Limit <input id="limit" type="number" value="100" min="1" max="1000" /></label>

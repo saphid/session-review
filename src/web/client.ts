@@ -6,7 +6,9 @@ type ChartData = { labels: string[]; datasets: Array<{ label: string; data: numb
 type ChartConfig = { type: "bar" | "line"; data: ChartData; options: Record<string, unknown> };
 declare const Chart: new (canvas: HTMLCanvasElement, config: ChartConfig) => ChartInstance;
 
-interface SearchResult { provider: ProviderId; sessionId: string; title: string | null; startedAt: string | null; cwd: string | null; path: string; snippet: string | null; reason?: string; }
+interface SearchResult { provider: ProviderId; sessionId: string; title: string | null; startedAt: string | null; cwd: string | null; path: string; snippet: string | null; reason?: string; isBatch?: boolean; isSubagent?: boolean; parentSessionId?: string | null; parentTitle?: string | null; groupKey?: string; groupLabel?: string; groupReason?: string; }
+type GroupMode = "none" | "cwd" | "provider" | "primary";
+interface SearchGroup { key: string; label: string; reason: string; rows: SearchResult[]; }
 interface UsagePoint { bucket: string; name: string; count: number; sessions: number; }
 interface UsageSummaryRow { kind: UsageKind; name: string; count: number; sessions: number; }
 interface UsageResponse { summary: UsageSummaryRow[]; timeline: UsagePoint[]; }
@@ -73,8 +75,16 @@ async function runSearch(started: number): Promise<void> {
   const target = element<HTMLDivElement>("results");
   target.replaceChildren();
   if (!rows.length) { target.textContent = "No matching sessions."; setStatus(`Search completed in ${elapsed(started)} and returned 0 sessions.`); return; }
-  for (const row of rows) target.append(searchResultNode(row));
-  setStatus(`Search completed in ${elapsed(started)} and returned ${rows.length} sessions.`);
+  const mode = groupMode();
+  if (mode === "none") {
+    for (const row of rows) target.append(searchResultNode(row));
+    setStatus(`Search completed in ${elapsed(started)} and returned ${rows.length} sessions.`);
+    return;
+  }
+
+  const groups = groupSearchRows(rows, mode);
+  for (const group of groups) target.append(searchGroupNode(group, mode));
+  setStatus(`Search completed in ${elapsed(started)} and returned ${rows.length} sessions in ${groups.length} groups.`);
 }
 
 async function runUsage(started: number): Promise<void> {
@@ -97,9 +107,66 @@ async function runSession(started: number): Promise<void> {
 function searchResultNode(row: SearchResult): HTMLElement {
   const item = document.createElement("div");
   item.className = "result";
-  item.innerHTML = `<strong><a href="/session/${encodeURIComponent(row.sessionId)}">[${escapeHtml(row.provider)}] ${escapeHtml(row.title ?? "Untitled")}</a></strong><div class="muted">${escapeHtml(row.startedAt ?? "unknown date")}${row.cwd ? ` · ${escapeHtml(row.cwd)}` : ""}</div><div class="muted">${escapeHtml(row.path)}</div><p>${highlight(row.snippet ?? "")}</p>`;
+  const badges = `${row.isSubagent ? '<span class="badge">subagent</span>' : ""}${row.isBatch ? '<span class="badge">batch-like</span>' : ""}`;
+  item.innerHTML = `<strong><a href="/session/${encodeURIComponent(row.sessionId)}">[${escapeHtml(row.provider)}] ${escapeHtml(row.title ?? "Untitled")}</a>${badges}</strong><div class="muted">${escapeHtml(row.startedAt ?? "unknown date")}${row.cwd ? ` · ${escapeHtml(row.cwd)}` : ""}</div>${row.isSubagent ? `<div class="muted">Grouped under: ${escapeHtml(row.groupLabel ?? row.parentTitle ?? "primary session")}</div>` : ""}<div class="muted">${escapeHtml(row.path)}</div><p>${highlight(row.snippet ?? "")}</p>`;
   item.querySelector("a")?.addEventListener("click", (event) => { event.preventDefault(); history.pushState(null, "", `/session/${encodeURIComponent(row.sessionId)}`); setTab("session"); });
   return item;
+}
+
+function groupSearchRows(rows: SearchResult[], mode: GroupMode): SearchGroup[] {
+  const groups = new Map<string, SearchGroup>();
+  for (const row of rows) {
+    const spec = groupSpec(row, mode);
+    const existing = groups.get(spec.key);
+    if (existing) existing.rows.push(row);
+    else groups.set(spec.key, { ...spec, rows: [row] });
+  }
+  return [...groups.values()].sort((a, b) => newestTimestamp(b.rows).localeCompare(newestTimestamp(a.rows)) || a.label.localeCompare(b.label));
+}
+
+function groupSpec(row: SearchResult, mode: GroupMode): Omit<SearchGroup, "rows"> {
+  if (mode === "cwd") {
+    const label = row.cwd || "Unknown working directory";
+    return { key: `cwd:${label}`, label, reason: "started in this working directory" };
+  }
+  if (mode === "provider") {
+    return { key: `provider:${row.provider}`, label: row.provider, reason: "created by this agent/provider" };
+  }
+  if (mode === "primary") {
+    if (row.isSubagent) {
+      return {
+        key: row.groupKey ?? `subagent:${row.parentSessionId ?? row.path}`,
+        label: row.groupLabel ?? row.parentTitle ?? "Primary session",
+        reason: row.groupReason ?? "subagent tied to this primary session",
+      };
+    }
+    return { key: `primary:${row.sessionId}`, label: row.title || `Session ${row.sessionId}`, reason: "primary session" };
+  }
+  return { key: row.sessionId, label: row.title || row.sessionId, reason: "session" };
+}
+
+function searchGroupNode(group: SearchGroup, mode: GroupMode): HTMLElement {
+  const details = document.createElement("details");
+  details.className = "group";
+  details.open = mode !== "primary" || group.rows.length <= 1;
+  const subagents = group.rows.filter((row) => row.isSubagent).length;
+  const primaryCount = group.rows.length - subagents;
+  const summary = document.createElement("summary");
+  summary.innerHTML = `<span class="group-title">${escapeHtml(group.label)}</span><span class="group-meta">${group.rows.length} sessions${subagents ? ` · ${subagents} subagents` : ""}${primaryCount && mode === "primary" ? ` · ${primaryCount} primary` : ""} · newest ${escapeHtml(newestTimestamp(group.rows) || "unknown")}</span>`;
+  details.append(summary);
+  const body = document.createElement("div");
+  body.className = "group-rows";
+  const reason = document.createElement("p");
+  reason.className = "muted";
+  reason.textContent = group.reason;
+  body.append(reason);
+  for (const row of group.rows) body.append(searchResultNode(row));
+  details.append(body);
+  return details;
+}
+
+function newestTimestamp(rows: SearchResult[]): string {
+  return rows.map((row) => row.startedAt ?? "").sort().at(-1) ?? "";
 }
 
 function renderSession(details: SessionDetails): void {
@@ -157,6 +224,7 @@ function cssRole(role: string): string { return role.toLowerCase().replace(/[^a-
 function drawUsageTable(rows: UsageSummaryRow[], target: HTMLDivElement): void { if (!rows.length) { target.textContent = "No usage signals found."; return; } target.innerHTML = `<table><thead><tr><th>Name</th><th>Uses</th><th>Sessions</th></tr></thead><tbody>${rows.slice(0, 100).map((row) => `<tr><td>${escapeHtml(row.name)}</td><td>${row.count}</td><td>${row.sessions}</td></tr>`).join("")}</tbody></table>`; }
 function renderLinked(rows: SearchResult[], target: HTMLDivElement): void { if (!rows.length) { target.textContent = "No explicit linked or same-run subagent sessions found."; return; } target.innerHTML = rows.map((row) => `<div class="result"><a href="/session/${encodeURIComponent(row.sessionId)}">[${escapeHtml(row.provider)}] ${escapeHtml(row.title ?? "Untitled")}</a><div class="muted">${escapeHtml(row.reason ?? "linked")} · ${escapeHtml(row.startedAt ?? "unknown")} · ${escapeHtml(row.path)}</div></div>`).join(""); target.querySelectorAll("a").forEach((link) => link.addEventListener("click", (event) => { event.preventDefault(); history.pushState(null, "", (event.currentTarget as HTMLAnchorElement).pathname); setTab("session"); })); }
 function params(): URLSearchParams { const query = new URLSearchParams(); for (const key of ["query", "provider", "cwd", "startDate", "endDate", "batchMode", "limit"] as const) { const val = value(key); if (val) query.set(key, val); } const pathFilter = value("pathFilter"); if (pathFilter) query.set("path", pathFilter); return query; }
+function groupMode(): GroupMode { const raw = value("groupBy"); return raw === "cwd" || raw === "provider" || raw === "primary" ? raw : "none"; }
 async function getJson<T>(url: string): Promise<T> { const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 30_000); try { const response = await fetch(url, { signal: controller.signal }); if (!response.ok) throw new Error(await response.text()); return response.json() as Promise<T>; } finally { clearTimeout(timeout); } }
 function setBusy(busy: boolean, message?: string): void { runButton.disabled = busy; if (message) setStatus(message); }
 function setStatus(message: string): void { element<HTMLElement>("statusLine").textContent = message; }
