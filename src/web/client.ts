@@ -6,6 +6,7 @@ type ChartData = { labels: string[]; datasets: Array<{ label: string; data: numb
 type ChartConfig = { type: "bar" | "line"; data: ChartData; options: Record<string, unknown> };
 type HighlightResult = { value: string; language?: string };
 type HighlightJs = { getLanguage(name: string): unknown; highlight(code: string, options: { language: string; ignoreIllegals: boolean }): HighlightResult; highlightAuto(code: string, languages?: string[]): HighlightResult };
+type TurnDirection = "input" | "output" | "context";
 declare const Chart: new (canvas: HTMLCanvasElement, config: ChartConfig) => ChartInstance;
 declare const hljs: HighlightJs;
 
@@ -26,6 +27,8 @@ let turnChart: ChartInstance | null = null;
 let lastSearchRows: SearchResult[] = [];
 let currentSessionDetails: SessionDetails | null = null;
 let lastUsageResponse: UsageResponse | null = null;
+const transcriptLineLimitKey = "session-review-transcript-line-limit";
+const defaultTranscriptLineLimit = 18;
 
 const searchTab = element<HTMLButtonElement>("searchTab");
 const usageTab = element<HTMLButtonElement>("usageTab");
@@ -316,7 +319,7 @@ function renderSession(details: SessionDetails): void {
   const target = element<HTMLDivElement>("sessionDetails");
   const tools = details.usage.filter((entry) => entry.kind === "tool");
   const skills = details.usage.filter((entry) => entry.kind === "skill");
-  target.innerHTML = `<p><a href="/">← Back to search</a></p><h3>${escapeHtml(details.title ?? "Untitled")}</h3><p class="muted">${escapeHtml(details.provider)} · ${escapeHtml(details.startedAt ?? "unknown date")} · ${details.isBatch ? "batch-like" : "non-batch"}</p><p><strong>Purpose:</strong> ${escapeHtml(details.purpose ?? "Unknown")}</p><p><strong>CWD:</strong> ${escapeHtml(details.cwd ?? "Unknown")}</p><p><strong>Path:</strong> ${escapeHtml(details.path)}</p><div class="cards"><div class="card"><strong>${details.turnCount}</strong><br />turns</div><div class="card"><strong>${details.toolUseCount}</strong><br />tool uses</div><div class="card"><strong>${details.skillUseCount}</strong><br />skill mentions</div><div class="card"><strong>${details.linkedSessions.length}</strong><br />linked sessions</div></div><h3>Turn activity</h3><p class="muted">Click a bar to jump to that turn. Tool/skill bars are heuristic; tables use indexed usage signals.</p><div class="chart-wrap"><canvas id="sessionTurnChart"></canvas></div><h3>Tools</h3><div id="sessionTools"></div><h3>Skills</h3><div id="sessionSkills"></div><h3>Linked subagent / nearby sessions</h3><div id="linkedSessions"></div><h3>Transcript</h3><div class="session-layout"><nav class="turn-sidebar" id="turnSidebar"></nav><div class="transcript" id="transcript"></div></div>`;
+  target.innerHTML = `<p><a href="/">← Back to search</a></p><h3>${escapeHtml(details.title ?? "Untitled")}</h3><p class="muted">${escapeHtml(details.provider)} · ${escapeHtml(details.startedAt ?? "unknown date")} · ${details.isBatch ? "batch-like" : "non-batch"}</p><p><strong>Purpose:</strong> ${escapeHtml(details.purpose ?? "Unknown")}</p><p><strong>CWD:</strong> ${escapeHtml(details.cwd ?? "Unknown")}</p><p><strong>Path:</strong> ${escapeHtml(details.path)}</p><div class="cards"><div class="card"><strong>${details.turnCount}</strong><br />turns</div><div class="card"><strong>${details.toolUseCount}</strong><br />tool uses</div><div class="card"><strong>${details.skillUseCount}</strong><br />skill mentions</div><div class="card"><strong>${details.linkedSessions.length}</strong><br />linked sessions</div></div><h3>Turn activity</h3><p class="muted">Click a bar to jump to that turn. Tool/skill bars are heuristic; tables use indexed usage signals.</p><div class="chart-wrap"><canvas id="sessionTurnChart"></canvas></div><h3>Tools</h3><div id="sessionTools"></div><h3>Skills</h3><div id="sessionSkills"></div><h3>Linked subagent / nearby sessions</h3><div id="linkedSessions"></div><h3>Transcript</h3><div class="transcript-controls"><label>Default visible lines <input id="transcriptLineLimit" type="number" min="3" max="500" value="${transcriptLineLimit()}" /></label><button id="expandAllTurns">Expand all</button><button id="collapseAllTurns">Collapse all</button><label>Item type <select id="turnTypeSelect"></select></label><button id="expandTypeTurns">Expand type</button><button id="collapseTypeTurns">Collapse type</button><button id="applyLineLimit">Apply line limit</button></div><div class="session-layout"><nav class="turn-sidebar" id="turnSidebar"></nav><div class="transcript" id="transcript"></div></div>`;
   target.querySelector("a")?.addEventListener("click", (event) => { event.preventDefault(); history.pushState(null, "", "/"); setTab("search"); });
   const turnCanvas = element<HTMLCanvasElement>("sessionTurnChart");
   turnChart = replaceChart(turnChart, turnCanvas, turnChartConfig(details.transcript));
@@ -329,6 +332,7 @@ function renderSession(details: SessionDetails): void {
   drawUsageTable(skills, element<HTMLDivElement>("sessionSkills"));
   renderLinked(details.linkedSessions, element<HTMLDivElement>("linkedSessions"));
   renderTranscript(details.transcript);
+  bindTranscriptControls(details.transcript);
 }
 
 function renderTranscript(items: TranscriptItem[]): void {
@@ -346,16 +350,114 @@ function renderTranscript(items: TranscriptItem[]): void {
     card.id = id;
     card.className = `turn-card ${cssRole(item.role)}`;
     const direction = modelDirection(item.role);
+    card.dataset.role = cssRole(item.role);
+    card.dataset.direction = direction.kind;
+    card.dataset.lineCount = String(countContentLines(item.content));
     const head = document.createElement("div");
     head.className = "turn-head";
-    head.innerHTML = `<div class="turn-title"><strong>#${item.index}</strong><span>${escapeHtml(item.role)}</span><span class="io-badge ${direction.className}">${escapeHtml(direction.label)}</span></div><div class="turn-stats"><span>${item.toolCount} tools</span><span>${item.skillCount} skills</span><span title="Estimated from text; raw provider token usage is not always available per turn.">${formatNumber(estimateTokens(item.content))} tokens</span></div>`;
+    head.innerHTML = `<div class="turn-title"><strong>#${item.index}</strong><span>${escapeHtml(item.role)}</span><span class="io-badge ${direction.className}">${escapeHtml(direction.label)}</span></div><div class="turn-stats"><span>${item.toolCount} tools</span><span>${item.skillCount} skills</span><span title="Estimated from text; raw provider token usage is not always available per turn.">${formatNumber(estimateTokens(item.content))} tokens</span></div><div class="turn-actions"><button class="turn-action collapse-turn" type="button">Collapse</button><button class="turn-action show-more-turn" type="button" hidden>Show more</button></div>`;
     const content = document.createElement("div");
     content.className = "turn-content";
     content.append(renderFormattedContent(item));
     card.append(head, content);
+    applyTurnLineLimit(card, transcriptLineLimit());
     transcript.append(card);
   }
 }
+
+function bindTranscriptControls(items: TranscriptItem[]): void {
+  const select = element<HTMLSelectElement>("turnTypeSelect");
+  select.replaceChildren(new Option("All types", "all"));
+  const roleOptions = [...new Set(items.map((item) => item.role.toLowerCase()))].sort();
+  for (const role of roleOptions) select.append(new Option(`Role: ${role}`, `role:${cssRole(role)}`));
+  select.append(new Option("Model input", "direction:input"));
+  select.append(new Option("Model output", "direction:output"));
+  select.append(new Option("Context", "direction:context"));
+
+  element<HTMLButtonElement>("expandAllTurns").addEventListener("click", () => setTurnExpanded(matchingTurnCards("all"), true));
+  element<HTMLButtonElement>("collapseAllTurns").addEventListener("click", () => setTurnCollapsed(matchingTurnCards("all"), true));
+  element<HTMLButtonElement>("expandTypeTurns").addEventListener("click", () => setTurnExpanded(matchingTurnCards(select.value), true));
+  element<HTMLButtonElement>("collapseTypeTurns").addEventListener("click", () => setTurnCollapsed(matchingTurnCards(select.value), true));
+  element<HTMLButtonElement>("applyLineLimit").addEventListener("click", () => {
+    const limit = transcriptLineLimitFromInput();
+    localStorage.setItem(transcriptLineLimitKey, String(limit));
+    for (const card of matchingTurnCards("all")) applyTurnLineLimit(card, limit);
+  });
+
+  for (const card of matchingTurnCards("all")) {
+    card.querySelector<HTMLButtonElement>(".collapse-turn")?.addEventListener("click", () => toggleTurnCollapsed(card));
+    card.querySelector<HTMLButtonElement>(".show-more-turn")?.addEventListener("click", () => toggleTurnShowMore(card));
+  }
+}
+
+function matchingTurnCards(selector: string): HTMLElement[] {
+  const cards = [...document.querySelectorAll<HTMLElement>(".turn-card")];
+  if (selector === "all") return cards;
+  if (selector.startsWith("role:")) return cards.filter((card) => card.dataset.role === selector.slice("role:".length));
+  if (selector.startsWith("direction:")) return cards.filter((card) => card.dataset.direction === selector.slice("direction:".length));
+  return cards;
+}
+
+function setTurnCollapsed(cards: HTMLElement[], collapsed: boolean): void {
+  for (const card of cards) {
+    card.classList.toggle("collapsed", collapsed);
+    card.classList.remove("expanded");
+    const button = card.querySelector<HTMLButtonElement>(".collapse-turn");
+    if (button) button.textContent = collapsed ? "Expand" : "Collapse";
+    const showMore = card.querySelector<HTMLButtonElement>(".show-more-turn");
+    if (showMore) showMore.textContent = "Show more";
+    if (!collapsed) applyTurnLineLimit(card, transcriptLineLimitFromInput());
+  }
+}
+
+function setTurnExpanded(cards: HTMLElement[], expanded: boolean): void {
+  for (const card of cards) {
+    card.classList.remove("collapsed");
+    card.classList.toggle("expanded", expanded);
+    const content = card.querySelector<HTMLElement>(".turn-content");
+    if (content) content.style.maxHeight = expanded ? "none" : maxHeightForLines(transcriptLineLimitFromInput());
+    const collapse = card.querySelector<HTMLButtonElement>(".collapse-turn");
+    if (collapse) collapse.textContent = "Collapse";
+    const showMore = card.querySelector<HTMLButtonElement>(".show-more-turn");
+    if (showMore) showMore.textContent = expanded ? "Show less" : "Show more";
+    if (!expanded) applyTurnLineLimit(card, transcriptLineLimitFromInput());
+  }
+}
+
+function toggleTurnCollapsed(card: HTMLElement): void {
+  setTurnCollapsed([card], !card.classList.contains("collapsed"));
+}
+
+function toggleTurnShowMore(card: HTMLElement): void {
+  setTurnExpanded([card], !card.classList.contains("expanded"));
+}
+
+function applyTurnLineLimit(card: HTMLElement, limit: number): void {
+  const content = card.querySelector<HTMLElement>(".turn-content");
+  if (!content) return;
+  const lineCount = Number(card.dataset.lineCount ?? "0");
+  const shouldTruncate = lineCount > limit;
+  card.classList.toggle("truncated", shouldTruncate);
+  if (!card.classList.contains("expanded")) content.style.maxHeight = shouldTruncate ? maxHeightForLines(limit) : "none";
+  const showMore = card.querySelector<HTMLButtonElement>(".show-more-turn");
+  if (showMore) {
+    showMore.hidden = !shouldTruncate;
+    showMore.textContent = card.classList.contains("expanded") ? "Show less" : "Show more";
+  }
+}
+
+function transcriptLineLimit(): number {
+  const stored = Number(localStorage.getItem(transcriptLineLimitKey) ?? "");
+  return Number.isFinite(stored) && stored >= 3 ? stored : defaultTranscriptLineLimit;
+}
+
+function transcriptLineLimitFromInput(): number {
+  const raw = Number(element<HTMLInputElement>("transcriptLineLimit").value);
+  return Number.isFinite(raw) ? Math.max(3, Math.min(500, Math.round(raw))) : defaultTranscriptLineLimit;
+}
+
+function maxHeightForLines(lines: number): string { return `${Math.max(3, lines) * 1.55 + 1}em`; }
+function countContentLines(text: string): number { return text.split(/\r?\n/).reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / 120)), 0); }
 
 function renderFormattedContent(item: TranscriptItem): HTMLElement {
   const wrapper = document.createElement("div");
@@ -446,11 +548,11 @@ function languageLabel(language: string): string {
   return language.replace(/^./, (char) => char.toUpperCase());
 }
 
-function modelDirection(role: string): { label: string; className: string } {
+function modelDirection(role: string): { kind: TurnDirection; label: string; className: string } {
   const lower = role.toLowerCase();
-  if (lower === "assistant" || lower === "tool" || lower === "bashexecution") return { label: "model output", className: "io-output" };
-  if (lower === "user" || lower === "system" || lower === "tool_result") return { label: "model input", className: "io-input" };
-  return { label: "context", className: "io-context" };
+  if (lower === "assistant" || lower === "tool" || lower === "bashexecution") return { kind: "output", label: "model output", className: "io-output" };
+  if (lower === "user" || lower === "system" || lower === "tool_result") return { kind: "input", label: "model input", className: "io-input" };
+  return { kind: "context", label: "context", className: "io-context" };
 }
 
 function estimateTokens(text: string): number {

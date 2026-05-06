@@ -45,14 +45,22 @@
       .turn-card.tool, .turn-card.tool_result, .turn-card.bashexecution { border-left-color: var(--tool); }
       .turn-card.summary, .turn-card.system { border-left-color: var(--system); }
       .turn-card.highlight { outline: 2px solid #fbbf24; }
+      .transcript-controls { display:flex; gap:10px; flex-wrap:wrap; align-items:end; margin: 10px 0 16px; padding: 10px; border:1px solid var(--border); border-radius:10px; background:#0f1117; }
+      .transcript-controls label { display:grid; grid-template-columns:auto; min-width: 130px; }
+      .transcript-controls input { width: 90px; }
+      .transcript-controls select { min-width: 170px; }
+      .transcript-controls button, .turn-action { padding: 5px 8px; font-size: 12px; border-radius: 7px; }
       .turn-head { display:flex; justify-content:space-between; gap:12px; align-items:center; margin-bottom: 10px; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
-      .turn-title, .turn-stats { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+      .turn-title, .turn-stats, .turn-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
       .turn-stats { justify-content:flex-end; white-space:nowrap; }
+      .turn-actions { justify-content:flex-end; }
       .io-badge { display:inline-flex; border:1px solid #3b3f4b; border-radius:999px; padding:2px 7px; font-size:11px; letter-spacing:0; text-transform:none; }
       .io-input { color:#93c5fd; border-color:#315f9e; background:rgba(59,130,246,.08); }
       .io-output { color:#c4b5fd; border-color:#6d4db3; background:rgba(168,85,247,.08); }
       .io-context { color:#d1d5db; border-color:#4b5563; background:rgba(107,114,128,.08); }
-      .turn-content { font-size: 13px; line-height: 1.55; }
+      .turn-content { font-size: 13px; line-height: 1.55; overflow: hidden; transition: max-height .12s ease; }
+      .turn-card.collapsed .turn-content { display: none; }
+      .turn-card.truncated:not(.expanded) .turn-content { border-bottom: 1px dashed #3b3f4b; }
       .turn-text { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
       .code-block { margin: 12px 0; border: 1px solid #34384a; border-radius: 10px; overflow: hidden; background: #0d1117; }
       .code-block figcaption { display: flex; justify-content: space-between; gap: 8px; padding: 7px 10px; border-bottom: 1px solid #34384a; background: #111827; color: #c8d0e5; font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
