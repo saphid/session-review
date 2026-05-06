@@ -17,6 +17,8 @@ interface UsagePoint { bucket: string; name: string; count: number; sessions: nu
 interface UsageSummaryRow { kind: UsageKind; name: string; count: number; sessions: number; }
 interface UsageResponse { summary: UsageSummaryRow[]; timeline: UsagePoint[]; }
 interface TranscriptItem { index: number; role: string; content: string; toolCount: number; skillCount: number; }
+interface ChatMessage { role: "user" | "assistant"; content: string }
+interface SelectedChatItem { kind: string; label: string; data: unknown }
 interface SessionDetails {
   sessionId: string; provider: string; title: string | null; startedAt: string | null; cwd: string | null; path: string; indexedAt: string; isBatch: boolean; purpose: string | null; bodyPreview: string; turnCount: number; toolUseCount: number; skillUseCount: number; turns: Array<{ index: number; role: string; toolCount: number; skillCount: number }>; transcript: TranscriptItem[]; usage: UsageSummaryRow[]; linkedSessions: SearchResult[];
 }
@@ -27,6 +29,8 @@ let turnChart: ChartInstance | null = null;
 let lastSearchRows: SearchResult[] = [];
 let currentSessionDetails: SessionDetails | null = null;
 let lastUsageResponse: UsageResponse | null = null;
+const chatHistory: ChatMessage[] = [];
+let selectedChatItem: SelectedChatItem | null = null;
 const transcriptLineLimitKey = "session-review-transcript-line-limit";
 const defaultTranscriptLineLimit = 18;
 
@@ -36,12 +40,14 @@ const searchPanel = element<HTMLElement>("searchPanel");
 const usagePanel = element<HTMLElement>("usagePanel");
 const sessionPanel = element<HTMLElement>("sessionPanel");
 const runButton = element<HTMLButtonElement>("run");
-const piLaunchButton = element<HTMLButtonElement>("piLaunch");
+const piSendButton = element<HTMLButtonElement>("piSend");
+const clearSelectedChatItemButton = element<HTMLButtonElement>("clearSelectedChatItem");
 
 searchTab.addEventListener("click", () => setTab("search"));
 usageTab.addEventListener("click", () => setTab("usage"));
 runButton.addEventListener("click", () => void run());
-piLaunchButton.addEventListener("click", () => void launchPiSidebar());
+piSendButton.addEventListener("click", () => void sendPiChat());
+clearSelectedChatItemButton.addEventListener("click", () => setSelectedChatItem(null));
 window.addEventListener("popstate", () => { activeTab = location.pathname.startsWith("/session/") ? "session" : activeTab === "session" ? "search" : activeTab; void run(); });
 void init();
 
@@ -127,9 +133,14 @@ async function runSession(started: number): Promise<void> {
 
 function searchResultNode(row: SearchResult): HTMLElement {
   const item = document.createElement("div");
-  item.className = "result";
+  item.className = "result selectable-chat-item";
   const badges = `${row.isSubagent ? '<span class="badge">subagent</span>' : ""}${row.isBatch ? '<span class="badge">batch-like</span>' : ""}`;
   item.innerHTML = `<div class="result-head"><strong><a href="/session/${encodeURIComponent(row.sessionId)}">[${escapeHtml(row.provider)}] ${escapeHtml(row.title ?? "Untitled")}</a>${badges}</strong><span class="token-count" title="Estimated from indexed transcript text">${formatNumber(row.tokenEstimate ?? estimateTokens(`${row.title ?? ""}\n${row.snippet ?? ""}`))} tokens</span></div><div class="muted">${escapeHtml(row.startedAt ?? "unknown date")}${row.cwd ? ` · ${escapeHtml(row.cwd)}` : ""}</div>${row.isSubagent ? `<div class="muted">Grouped under: ${escapeHtml(row.groupLabel ?? row.parentTitle ?? "primary session")}</div>` : ""}<div class="muted">${escapeHtml(row.path)}</div><p>${highlight(row.snippet ?? "")}</p>`;
+  item.addEventListener("click", (event) => {
+    if ((event.target as HTMLElement).closest("a,button")) return;
+    setSelectedChatItem({ kind: "session result", label: row.title ?? row.sessionId, data: summarizeSearchResult(row) });
+    item.classList.add("selected-for-chat");
+  });
   item.querySelector("a")?.addEventListener("click", (event) => { event.preventDefault(); history.pushState(null, "", `/session/${encodeURIComponent(row.sessionId)}`); setTab("session"); });
   return item;
 }
@@ -174,6 +185,10 @@ function searchGroupNode(group: SearchGroup, mode: GroupMode): HTMLElement {
   const primaryCount = group.rows.length - subagents;
   const summary = document.createElement("summary");
   summary.innerHTML = `<span class="group-title">${escapeHtml(group.label)}</span><span class="group-meta">${group.rows.length} sessions${subagents ? ` · ${subagents} subagents` : ""}${primaryCount && mode === "primary" ? ` · ${primaryCount} primary` : ""} · newest ${escapeHtml(newestTimestamp(group.rows) || "unknown")}</span>`;
+  summary.addEventListener("click", () => {
+    setSelectedChatItem({ kind: "session group", label: group.label, data: { key: group.key, reason: group.reason, rows: group.rows.map(summarizeSearchResult) } });
+    details.classList.add("selected-for-chat");
+  });
   details.append(summary);
   const body = document.createElement("div");
   body.className = "group-rows";
@@ -190,23 +205,53 @@ function newestTimestamp(rows: SearchResult[]): string {
   return rows.map((row) => row.startedAt ?? "").sort().at(-1) ?? "";
 }
 
-async function launchPiSidebar(): Promise<void> {
-  piLaunchButton.disabled = true;
-  setPiStatus("Launching Pi in Ghostty…");
+async function sendPiChat(): Promise<void> {
+  const input = element<HTMLTextAreaElement>("piPrompt");
+  const message = input.value.trim();
+  if (!message) return;
+  input.value = "";
+  appendChatMessage("user", message);
+  chatHistory.push({ role: "user", content: message });
+  piSendButton.disabled = true;
+  setPiStatus("Pi is reading the loaded files and thinking…");
   try {
-    const payload = piPayload();
-    const result = await postJson<{ ok: boolean; message: string; contextPath: string; files: string[] }>("/api/pi/launch", payload);
-    setPiStatus(`${result.message} Context: ${result.contextPath}. ${result.files.length} screen files attached.`);
+    const payload = piPayload(message);
+    const result = await postJson<{ ok: boolean; reply: string; message: string; contextPath: string; attachedFiles: string[]; stderr?: string }>("/api/pi/chat", payload);
+    const reply = result.reply || result.stderr || result.message;
+    appendChatMessage(result.ok ? "assistant" : "assistant", reply, result.ok ? undefined : "error");
+    chatHistory.push({ role: "assistant", content: reply });
+    setPiStatus(`${result.message} Attached ${result.attachedFiles.length} files. Context: ${result.contextPath}`);
   } catch (error) {
-    setPiStatus(`Failed to launch Pi: ${error instanceof Error ? error.message : String(error)}`);
+    const text = `Failed to chat with Pi: ${error instanceof Error ? error.message : String(error)}`;
+    appendChatMessage("assistant", text, "error");
+    setPiStatus(text);
   } finally {
-    piLaunchButton.disabled = false;
+    piSendButton.disabled = false;
   }
 }
 
-function piPayload(): { message: string; screen: unknown; files: string[] } {
+function piPayload(message: string): { message: string; screen: unknown; selectedItem: unknown; files: string[]; history: ChatMessage[] } {
   const screen = screenContext();
-  return { message: value("piPrompt"), screen, files: relatedFiles() };
+  return { message, screen, selectedItem: selectedChatItem, files: relatedFiles(), history: chatHistory.slice(-12) };
+}
+
+function appendChatMessage(role: "user" | "assistant", content: string, extraClass = ""): void {
+  const container = element<HTMLDivElement>("chatMessages");
+  const message = document.createElement("div");
+  message.className = `chat-message ${role} ${extraClass}`.trim();
+  message.textContent = content;
+  container.append(message);
+  container.scrollTop = container.scrollHeight;
+}
+
+function setSelectedChatItem(item: SelectedChatItem | null): void {
+  selectedChatItem = item;
+  document.querySelectorAll(".selected-for-chat").forEach((node) => node.classList.remove("selected-for-chat"));
+  const chip = element<HTMLDivElement>("selectedChatItem");
+  const label = element<HTMLSpanElement>("selectedChatItemLabel");
+  chip.hidden = !item;
+  label.textContent = item ? `${item.kind}: ${item.label}` : "";
+  updatePiContextPreview();
 }
 
 function screenContext(): unknown {
@@ -226,6 +271,7 @@ function screenContext(): unknown {
       tab: activeTab,
       url: location.href,
       filters,
+      selectedItem: selectedChatItem,
       session: summarizeSession(currentSessionDetails),
     };
   }
@@ -234,6 +280,7 @@ function screenContext(): unknown {
       tab: activeTab,
       url: location.href,
       filters,
+      selectedItem: selectedChatItem,
       usageSummary: lastUsageResponse.summary.slice(0, 40),
       usageTimeline: lastUsageResponse.timeline.slice(0, 80),
     };
@@ -242,6 +289,7 @@ function screenContext(): unknown {
     tab: activeTab,
     url: location.href,
     filters,
+    selectedItem: selectedChatItem,
     searchResults: lastSearchRows.slice(0, 80).map(summarizeSearchResult),
     groupMode: groupMode(),
   };
@@ -305,6 +353,7 @@ function updatePiContextPreview(): void {
     tab: activeTab,
     files: files.slice(0, 20),
     fileCount: files.length,
+    selectedItem: selectedChatItem ? { kind: selectedChatItem.kind, label: selectedChatItem.label } : null,
     currentSession: currentSessionDetails ? { id: currentSessionDetails.sessionId, title: currentSessionDetails.title, path: currentSessionDetails.path } : null,
     searchResults: activeTab === "search" ? lastSearchRows.length : undefined,
     usageRows: activeTab === "usage" ? lastUsageResponse?.summary.length ?? 0 : undefined,
@@ -359,6 +408,15 @@ function renderTranscript(items: TranscriptItem[]): void {
     const content = document.createElement("div");
     content.className = "turn-content";
     content.append(renderFormattedContent(item));
+    card.addEventListener("click", (event) => {
+      if ((event.target as HTMLElement).closest("a,button")) return;
+      setSelectedChatItem({
+        kind: "transcript turn",
+        label: `#${item.index} ${item.role}`,
+        data: { index: item.index, role: item.role, tokenEstimate: estimateTokens(item.content), content: item.content, sessionPath: currentSessionDetails?.path },
+      });
+      card.classList.add("selected-for-chat");
+    });
     card.append(head, content);
     applyTurnLineLimit(card, transcriptLineLimit());
     transcript.append(card);

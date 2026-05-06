@@ -78,9 +78,18 @@
       th, td { border-bottom: 1px solid #2b2d33; padding: 8px; text-align: left; }
       .pi-sidebar { position: sticky; top: 18px; max-height: calc(100vh - 36px); overflow: auto; }
       .pi-sidebar h2 { margin-top: 0; }
-      .pi-sidebar textarea { width: 100%; min-height: 130px; resize: vertical; font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+      .pi-sidebar textarea { width: 100%; min-height: 90px; resize: vertical; font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
       .pi-sidebar .actions { display:flex; gap:8px; align-items:center; margin-top:10px; }
       .pi-sidebar pre { max-height: 260px; overflow:auto; padding:10px; border:1px solid var(--border); border-radius:8px; background:#0f1117; color:#c8d0e5; font-size:12px; white-space:pre-wrap; }
+      .chat-messages { display:grid; gap:10px; max-height: 380px; overflow:auto; padding:10px; border:1px solid var(--border); border-radius:10px; background:#0f1117; margin: 10px 0; }
+      .chat-message { padding:9px 10px; border-radius:10px; white-space:pre-wrap; font-size:13px; line-height:1.45; }
+      .chat-message.user { background:#16244a; justify-self:end; max-width:92%; }
+      .chat-message.assistant { background:#20232b; justify-self:start; max-width:100%; }
+      .chat-message.error { background:#4a1f24; color:#ffd4d4; }
+      .selected-chat-item { display:flex; gap:8px; justify-content:space-between; align-items:center; border:1px solid #4864e6; background:rgba(72,100,230,.12); border-radius:999px; padding:6px 9px; color:#dce4ff; font-size:12px; }
+      .selected-chat-item[hidden] { display:none; }
+      .selected-for-chat { outline: 2px solid #8da2ff; outline-offset: 2px; }
+      .selectable-chat-item { cursor: pointer; }
       @media (max-width: 1200px) { .app-shell { grid-template-columns: 1fr; } .pi-sidebar { position: static; max-height: none; } }
       @media (max-width: 900px) { .filters { grid-template-columns: 1fr 1fr; } }
     </style>
@@ -120,13 +129,15 @@
       <section id="sessionPanel" hidden><h2>Session Details</h2><div id="sessionDetails"></div></section>
     </main>
     <aside class="pi-sidebar" aria-label="Pi sidebar agent">
-      <h2>Pi sidebar agent</h2>
-      <p class="muted">Launches the Pi TUI in Ghostty with the current screen context and related transcript/app files.</p>
-      <label>Ask Pi about this screen
+      <h2>Pi sidebar chat</h2>
+      <p class="muted">Ask Pi about the current screen. Pi receives the screen context and full contents of all loaded related files.</p>
+      <div id="selectedChatItem" class="selected-chat-item" hidden><span id="selectedChatItemLabel"></span><button id="clearSelectedChatItem" type="button">Clear</button></div>
+      <div id="chatMessages" class="chat-messages" aria-live="polite"></div>
+      <label>Message Pi
         <textarea id="piPrompt" placeholder="Ask about the selected session, visible results, subagent grouping, or how this screen works…"></textarea>
       </label>
-      <div class="actions"><button id="piLaunch">Open Pi TUI</button></div>
-      <p id="piStatus" class="muted" role="status">Ready to launch Pi with current screen context.</p>
+      <div class="actions"><button id="piSend">Send to Pi</button></div>
+      <p id="piStatus" class="muted" role="status">Ready. Click a page item to attach it as the selected item.</p>
       <details>
         <summary>Context preview</summary>
         <pre id="piContextPreview">No context yet.</pre>

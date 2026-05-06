@@ -1,9 +1,7 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { filterOptions, openDb, searchFilteredSessions, sessionDetails, usageSummary, usageTimeline } from "./db.js";
@@ -15,8 +13,7 @@ const defaultDb = path.join(process.env.HOME ?? ".", ".local", "share", "session
 const db = openDb(process.env.SESSION_REVIEW_DB ?? defaultDb);
 const port = Number(process.env.PORT ?? "8765");
 const piBin = process.env.SESSION_REVIEW_PI_BIN?.trim() || "pi";
-const ghosttyBin = process.env.SESSION_REVIEW_GHOSTTY_BIN?.trim() || "/Applications/cmux.app/Contents/Resources/bin/ghostty";
-const ghosttyApp = process.env.SESSION_REVIEW_GHOSTTY_APP?.trim() || "/Applications/cmux.app";
+const piChatTimeoutMs = Number(process.env.SESSION_REVIEW_PI_CHAT_TIMEOUT_MS ?? "120000");
 
 createServer((request, response) => {
   void route(request, response).catch((error: unknown) => sendJson(response, 500, { error: error instanceof Error ? error.message : String(error) }));
@@ -32,7 +29,7 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
   if (url.pathname === "/vendor/highlight.js") return sendFile(response, path.join(rootDir, "node_modules", "@highlightjs", "cdn-assets", "highlight.min.js"), "text/javascript");
   if (url.pathname === "/vendor/highlight.css") return sendFile(response, path.join(rootDir, "node_modules", "@highlightjs", "cdn-assets", "styles", "github-dark.min.css"), "text/css");
   if (url.pathname === "/api/filters") return sendJson(response, 200, filterOptions(db));
-  if (url.pathname === "/api/pi/launch" && request.method === "POST") return launchPiSidebar(request, response);
+  if (url.pathname === "/api/pi/chat" && request.method === "POST") return chatWithPi(request, response);
   if (url.pathname === "/api/session") {
     const id = url.searchParams.get("id");
     if (!id) return sendJson(response, 400, { error: "missing id" });
@@ -69,63 +66,95 @@ async function route(request: IncomingMessage, response: ServerResponse): Promis
   sendJson(response, 404, { error: "not found" });
 }
 
-type PiLaunchPayload = {
+type PiChatMessage = { role: "user" | "assistant"; content: string };
+type PiChatPayload = {
   message?: string;
   screen?: unknown;
+  selectedItem?: unknown;
   files?: string[];
+  history?: PiChatMessage[];
 };
 
-async function launchPiSidebar(request: IncomingMessage, response: ServerResponse): Promise<void> {
-  const payload = await readJsonBody<PiLaunchPayload>(request, 5 * 1024 * 1024);
+async function chatWithPi(request: IncomingMessage, response: ServerResponse): Promise<void> {
+  const payload = await readJsonBody<PiChatPayload>(request, 5 * 1024 * 1024);
+  const message = payload.message?.trim();
+  if (!message) return sendJson(response, 400, { error: "missing message" });
+
   const id = randomUUID().slice(0, 8);
-  const outDir = path.join(rootDir, "output", "pi-sidebar", id);
+  const outDir = path.join(rootDir, "output", "pi-chat", id);
   await mkdir(outDir, { recursive: true });
   const contextPath = path.join(outDir, "screen-context.json");
   const promptPath = path.join(outDir, "prompt.md");
-  const scriptPath = path.join(outDir, "run-pi.sh");
-  const files = [...new Set((payload.files ?? []).filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim()))];
-  const message = payload.message?.trim() || "Help me understand the current Session Review screen.";
+  const appSourceFiles = sessionReviewSourceFiles();
+  const files = uniqueFiles([...(payload.files ?? []), ...appSourceFiles]);
   const context = {
     generatedAt: new Date().toISOString(),
     screen: payload.screen ?? null,
+    selectedItem: payload.selectedItem ?? null,
+    history: (payload.history ?? []).slice(-12),
     files,
-    appSourceFiles: [
-      path.join(rootDir, "src", "web", "client.ts"),
-      path.join(rootDir, "src", "web", "index.html"),
-      path.join(rootDir, "src", "server.ts"),
-      path.join(rootDir, "src", "db.ts"),
-    ],
+    note: "Pi receives this context file plus every file listed here as @file attachments, so it can inspect the full file contents loaded for the current screen.",
   };
+
   await writeFile(contextPath, `${JSON.stringify(context, null, 2)}\n`, "utf8");
-  await writeFile(promptPath, piPrompt(message, contextPath, files), "utf8");
-  await writeFile(scriptPath, `#!/usr/bin/env bash\nset -euo pipefail\ncd ${shellQuote(rootDir)}\nexec ${shellQuote(piBin)} "$(cat ${shellQuote(promptPath)})"\n`, "utf8");
-  await chmod(scriptPath, 0o755);
+  await writeFile(promptPath, piChatPrompt(message, contextPath), "utf8");
+  const attachedFiles = uniqueFiles([contextPath, ...files]);
+  const result = await runPiPrint(promptPath, attachedFiles);
+  return sendJson(response, result.ok ? 200 : 500, { ...result, contextPath, attachedFiles });
+}
 
-  const launched = launchGhostty(scriptPath);
-  return sendJson(response, launched.ok ? 200 : 500, {
-    ok: launched.ok,
-    message: launched.message,
-    contextPath,
-    promptPath,
-    files,
+function sessionReviewSourceFiles(): string[] {
+  return [
+    path.join(rootDir, "src", "web", "client.ts"),
+    path.join(rootDir, "src", "web", "index.html"),
+    path.join(rootDir, "src", "server.ts"),
+    path.join(rootDir, "src", "db.ts"),
+  ];
+}
+
+function uniqueFiles(files: string[]): string[] {
+  return [...new Set(files.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim()))];
+}
+
+function piChatPrompt(message: string, contextPath: string): string {
+  return `You are the embedded Pi chat assistant for the Session Review web app.
+
+Answer the user's question using the attached @files as evidence. The first attached file is a JSON screen context bundle at:
+${contextPath}
+
+That context includes the active page/tab, visible results or session details, prior chat, and any selected page item. The remaining @files are the full contents of transcript/source files currently loaded for this screen.
+
+User question:
+${message}
+
+Be concise. If the selected item matters, explicitly say what selected item you are using.`;
+}
+
+async function runPiPrint(promptPath: string, files: string[]): Promise<{ ok: boolean; reply: string; stderr: string; message: string }> {
+  const prompt = await readFile(promptPath, "utf8");
+  return new Promise((resolve) => {
+    const args = ["--print", "--tools", "read,grep,find,ls", ...files.map((file) => `@${file}`), prompt];
+    const child = spawn(piBin, args, { cwd: rootDir, stdio: ["ignore", "pipe", "pipe"] });
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+    const timeout = setTimeout(() => {
+      child.kill("SIGTERM");
+      resolve({ ok: false, reply: "", stderr: Buffer.concat(stderr).toString("utf8"), message: `Pi timed out after ${piChatTimeoutMs}ms.` });
+    }, piChatTimeoutMs);
+
+    child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
+    child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
+    child.on("error", (error) => {
+      clearTimeout(timeout);
+      resolve({ ok: false, reply: "", stderr: String(error), message: "Failed to start Pi." });
+    });
+    child.on("close", (code) => {
+      clearTimeout(timeout);
+      const reply = Buffer.concat(stdout).toString("utf8").trim();
+      const err = Buffer.concat(stderr).toString("utf8").trim();
+      resolve({ ok: code === 0, reply, stderr: err, message: code === 0 ? "Pi answered." : `Pi exited with code ${code}.` });
+    });
   });
-}
-
-function piPrompt(message: string, contextPath: string, files: string[]): string {
-  return `You are a Pi sidebar agent launched from the Session Review web app.\n\nUser request:\n${message}\n\nCurrent screen context is saved at:\n${contextPath}\n\nStart by reading that JSON file. It contains the current tab, filters, visible search results or session details, and file paths related to what was on screen.\n\nRelevant files from the screen:\n${files.length ? files.map((file) => `- ${file}`).join("\n") : "- None captured"}\n\nUse the listed files as evidence. If you need implementation context for the web app itself, also inspect the appSourceFiles listed in the context JSON.`;
-}
-
-function launchGhostty(scriptPath: string): { ok: boolean; message: string } {
-  const args = ["-e", "/bin/bash", scriptPath];
-  if (os.platform() === "darwin" && existsSync(ghosttyApp)) {
-    spawn("open", ["-na", ghosttyApp, "--args", ...args], { detached: true, stdio: "ignore" }).unref();
-    return { ok: true, message: `Opened ${path.basename(ghosttyApp)} with Pi TUI.` };
-  }
-  if (existsSync(ghosttyBin)) {
-    spawn(ghosttyBin, args, { detached: true, stdio: "ignore" }).unref();
-    return { ok: true, message: "Opened Ghostty with Pi TUI." };
-  }
-  return { ok: false, message: `Ghostty was not found. Set SESSION_REVIEW_GHOSTTY_APP or SESSION_REVIEW_GHOSTTY_BIN.` };
 }
 
 async function readJsonBody<T>(request: IncomingMessage, maxBytes: number): Promise<T> {
