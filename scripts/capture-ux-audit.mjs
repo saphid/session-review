@@ -3,7 +3,9 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 
 const baseUrl = process.env.BASE_URL ?? "http://localhost:8896";
-const outDir = new URL("../output/ux-audit-round1/", import.meta.url);
+const outDir = process.env.AUDIT_OUT_DIR
+  ? new URL(`${process.env.AUDIT_OUT_DIR.replace(/\/$/u, "")}/`, `file://${process.cwd()}/`)
+  : new URL("../output/ux-audit-round1/", import.meta.url);
 await mkdir(outDir, { recursive: true });
 
 function dbSessionId() {
