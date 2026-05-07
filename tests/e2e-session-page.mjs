@@ -28,6 +28,7 @@ await page.screenshot({ path: new URL("session-top-e2e.png", outDir).pathname, f
 await page.getByRole("heading", { name: "Transcript" }).scrollIntoViewIfNeeded();
 await page.screenshot({ path: new URL("session-transcript-e2e.png", outDir).pathname, fullPage: false });
 
+await page.getByText("Turn analytics and linked sessions").click();
 const firstBar = page.locator("#sessionTurnChart");
 await firstBar.click({ position: { x: 120, y: 220 } });
 await page.locator(".turn-card.highlight").waitFor({ timeout: 5_000 });

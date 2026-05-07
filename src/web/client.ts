@@ -18,6 +18,7 @@ interface UsageSummaryRow { kind: UsageKind; name: string; count: number; sessio
 interface UsageResponse { summary: UsageSummaryRow[]; timeline: UsagePoint[]; }
 interface TranscriptItem { index: number; role: string; content: string; toolCount: number; skillCount: number; }
 interface ChatMessage { role: "user" | "assistant"; content: string }
+interface PiChat { id: string; history: ChatMessage[] }
 interface SelectedChatItem { kind: string; label: string; data: unknown }
 interface SessionDetails {
   sessionId: string; provider: string; title: string | null; startedAt: string | null; cwd: string | null; path: string; indexedAt: string; isBatch: boolean; purpose: string | null; bodyPreview: string; turnCount: number; toolUseCount: number; skillUseCount: number; turns: Array<{ index: number; role: string; toolCount: number; skillCount: number }>; transcript: TranscriptItem[]; usage: UsageSummaryRow[]; linkedSessions: SearchResult[];
@@ -29,12 +30,19 @@ let turnChart: ChartInstance | null = null;
 let lastSearchRows: SearchResult[] = [];
 let currentSessionDetails: SessionDetails | null = null;
 let lastUsageResponse: UsageResponse | null = null;
-const chatHistory: ChatMessage[] = [];
 let selectedChatItem: SelectedChatItem | null = null;
+let excludedSourceFiles = new Set<string>();
+let lastSourceSignature = "";
 const transcriptLineLimitKey = "session-review-transcript-line-limit";
 const piChatIdKey = "session-review-pi-chat-id";
+const piChatsKey = "session-review-pi-chats";
+const piSidebarWidthKey = "session-review-pi-sidebar-width";
 const defaultTranscriptLineLimit = 18;
+const defaultPiSidebarWidth = 460;
+const minPiSidebarWidth = 340;
+const maxPiSidebarWidth = 640;
 let piChatId = existingOrNewPiChatId();
+let piChats = loadPiChats(piChatId);
 
 const searchTab = element<HTMLButtonElement>("searchTab");
 const usageTab = element<HTMLButtonElement>("usageTab");
@@ -44,36 +52,134 @@ const sessionPanel = element<HTMLElement>("sessionPanel");
 const runButton = element<HTMLButtonElement>("run");
 const piSendButton = element<HTMLButtonElement>("piSend");
 const piNewChatButton = element<HTMLButtonElement>("piNewChat");
+const chatTabs = element<HTMLDivElement>("chatTabs");
 const clearSelectedChatItemButton = element<HTMLButtonElement>("clearSelectedChatItem");
+const clearFiltersButton = element<HTMLButtonElement>("clearFilters");
+const sidebarResizeHandle = element<HTMLDivElement>("sidebarResizeHandle");
+const piSidebar = element<HTMLElement>("piSidebar");
+
+initSidebarResize();
 
 searchTab.addEventListener("click", () => setTab("search"));
 usageTab.addEventListener("click", () => setTab("usage"));
 runButton.addEventListener("click", () => void run());
 piSendButton.addEventListener("click", () => void sendPiChat());
-piNewChatButton.addEventListener("click", () => resetPiChat());
+piNewChatButton.addEventListener("click", () => createPiChatTab());
 clearSelectedChatItemButton.addEventListener("click", () => setSelectedChatItem(null));
+clearFiltersButton.addEventListener("click", () => { clearFilters(); void run(); });
+element<HTMLInputElement>("query").addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    void run();
+  }
+});
 element<HTMLTextAreaElement>("piPrompt").addEventListener("keydown", (event) => {
   if (event.key === "Enter" && !event.shiftKey) {
     event.preventDefault();
     void sendPiChat();
   }
 });
-window.addEventListener("popstate", () => { activeTab = location.pathname.startsWith("/session/") ? "session" : activeTab === "session" ? "search" : activeTab; void run(); });
+window.addEventListener("popstate", () => {
+  activeTab = location.pathname.startsWith("/session/") ? "session" : activeTab === "session" ? "search" : activeTab;
+  syncPanels();
+  void run().then(focusActivePanel);
+});
+document.addEventListener("keydown", (event) => {
+  const target = event.target as HTMLElement | null;
+  const isTyping = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement;
+  if (event.key === "Escape") {
+    setSelectedChatItem(null);
+    return;
+  }
+  if (isTyping) return;
+  if (event.key === "/") {
+    event.preventDefault();
+    element<HTMLInputElement>("query").focus();
+    return;
+  }
+  if (event.key === "1") setTab("search");
+  if (event.key === "2") setTab("usage");
+});
 void init();
 
+function initSidebarResize(): void {
+  const savedWidth = Number(localStorage.getItem(piSidebarWidthKey));
+  setPiSidebarWidth(Number.isFinite(savedWidth) && savedWidth > 0 ? savedWidth : defaultPiSidebarWidth);
+
+  let drag: { pointerId: number; startX: number; startWidth: number } | null = null;
+
+  sidebarResizeHandle.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    drag = { pointerId: event.pointerId, startX: event.clientX, startWidth: piSidebar.getBoundingClientRect().width };
+    try {
+      sidebarResizeHandle.setPointerCapture(event.pointerId);
+    } catch {
+      // Document-level listeners below keep the drag working if pointer capture is unavailable.
+    }
+    document.body.classList.add("sidebar-resizing");
+    event.preventDefault();
+  });
+
+  document.addEventListener("pointermove", (event) => {
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    setPiSidebarWidth(drag.startWidth - (event.clientX - drag.startX));
+  });
+
+  const stopDrag = (event: PointerEvent): void => {
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    if (sidebarResizeHandle.hasPointerCapture(event.pointerId)) sidebarResizeHandle.releasePointerCapture(event.pointerId);
+    drag = null;
+    document.body.classList.remove("sidebar-resizing");
+  };
+  document.addEventListener("pointerup", stopDrag);
+  document.addEventListener("pointercancel", stopDrag);
+
+  sidebarResizeHandle.addEventListener("keydown", (event) => {
+    const currentWidth = Number(sidebarResizeHandle.getAttribute("aria-valuenow") ?? defaultPiSidebarWidth);
+    const step = event.shiftKey ? 60 : 20;
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      setPiSidebarWidth(currentWidth + step);
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      setPiSidebarWidth(currentWidth - step);
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      setPiSidebarWidth(minPiSidebarWidth);
+    } else if (event.key === "End") {
+      event.preventDefault();
+      setPiSidebarWidth(maxPiSidebarWidth);
+    }
+  });
+}
+
+function setPiSidebarWidth(width: number): void {
+  const next = Math.round(Math.max(minPiSidebarWidth, Math.min(maxPiSidebarWidth, width)));
+  document.documentElement.style.setProperty("--pi-sidebar-width", `${next}px`);
+  sidebarResizeHandle.setAttribute("aria-valuenow", String(next));
+  localStorage.setItem(piSidebarWidthKey, String(next));
+}
+
 async function init(): Promise<void> {
-  const filters = await getJson<{ providers: string[]; cwd: string[] }>("/api/filters");
-  for (const item of filters.providers) element<HTMLSelectElement>("provider").append(new Option(item, item));
   updateChatSessionPill();
+  renderChatMessages();
   syncPanels();
-  await run();
+  try {
+    const filters = await getJson<{ providers: string[]; cwd: string[] }>("/api/filters");
+    for (const item of filters.providers) element<HTMLSelectElement>("provider").append(new Option(item, item));
+    await run();
+  } catch (error) {
+    renderActiveError("Could not load local session index.", error, "Check that the Session Review server is running, then retry.");
+  }
 }
 
 function setTab(tab: "search" | "usage" | "session"): void {
+  const changedTab = tab !== activeTab;
   activeTab = tab;
+  if (changedTab) setSelectedChatItem(null);
   if (tab !== "session" && location.pathname !== "/") history.pushState(null, "", "/");
   syncPanels();
-  void run();
+  void run().then(focusActivePanel);
 }
 
 function syncPanels(): void {
@@ -82,6 +188,13 @@ function syncPanels(): void {
   searchPanel.hidden = activeTab !== "search";
   usagePanel.hidden = activeTab !== "usage";
   sessionPanel.hidden = activeTab !== "session";
+  document.body.dataset.activeTab = activeTab;
+  for (const panel of [searchPanel, usagePanel, sessionPanel]) panel.tabIndex = panel.hidden ? -1 : 0;
+}
+
+function focusActivePanel(): void {
+  const panel = activeTab === "search" ? searchPanel : activeTab === "usage" ? usagePanel : sessionPanel;
+  requestAnimationFrame(() => panel.focus({ preventScroll: true }));
 }
 
 async function run(): Promise<void> {
@@ -92,7 +205,7 @@ async function run(): Promise<void> {
     else if (activeTab === "usage") await runUsage(started);
     else await runSession(started);
   } catch (error) {
-    setStatus(`Search failed: ${error instanceof Error ? error.message : String(error)}`);
+    renderActiveError("Query failed.", error, "Clear filters, retry, or check that the local Session Review server is still running.");
   } finally {
     setBusy(false);
   }
@@ -106,7 +219,15 @@ async function runSearch(started: number): Promise<void> {
   updatePiContextPreview();
   const target = element<HTMLDivElement>("results");
   target.replaceChildren();
-  if (!rows.length) { target.textContent = "No matching sessions."; setStatus(`Search completed in ${elapsed(started)} and returned 0 sessions.`); return; }
+  if (!rows.length) {
+    if (hasSearchConstraints()) {
+      target.replaceChildren(emptyStateNode("No sessions match these filters.", "Clear filters or broaden the query, then run the search again.", [{ label: "Clear filters", action: () => { clearFilters(); void run(); } }]));
+    } else {
+      target.replaceChildren(emptyStateNode("No sessions indexed yet.", "Ingest local agent transcripts, then return here to search evidence across Pi, Claude, Codex, and Cursor runs.", [{ label: "Copy ingest command", action: () => void navigator.clipboard?.writeText("npm start -- ingest") }], "npm start -- ingest"));
+    }
+    setStatus(`Search completed in ${elapsed(started)} and returned 0 sessions.`);
+    return;
+  }
   const mode = groupMode();
   if (mode === "none") {
     for (const row of rows) target.append(searchResultNode(row));
@@ -129,11 +250,13 @@ async function runUsage(started: number): Promise<void> {
   updatePiContextPreview();
   usageChart = replaceChart(usageChart, element<HTMLCanvasElement>("chart"), usageChartConfig(data.timeline, data.summary.slice(0, 8).map((row) => row.name)));
   drawUsageTable(data.summary, element<HTMLDivElement>("usageTable"));
+  if (!data.summary.length) element<HTMLDivElement>("usageTable").replaceChildren(emptyStateNode("No usage signals found.", "Try a broader query, switch signal type, or ingest sessions that include tool and skill activity.", [{ label: "Clear filters", action: () => { clearFilters(); void run(); } }]));
   setStatus(`Usage query completed in ${elapsed(started)} with ${data.summary.length} names and ${data.timeline.length} graph points.`);
 }
 
 async function runSession(started: number): Promise<void> {
   const id = decodeURIComponent(location.pathname.replace(/^\/session\//, ""));
+  if (!id) throw new Error("Missing session id in URL.");
   const details = await getJson<SessionDetails>(`/api/session?id=${encodeURIComponent(id)}`);
   currentSessionDetails = details;
   lastUsageResponse = null;
@@ -145,12 +268,23 @@ async function runSession(started: number): Promise<void> {
 function searchResultNode(row: SearchResult): HTMLElement {
   const item = document.createElement("div");
   item.className = "result selectable-chat-item";
-  const badges = `${row.isSubagent ? '<span class="badge">subagent</span>' : ""}${row.isBatch ? '<span class="badge">batch-like</span>' : ""}`;
+  item.tabIndex = 0;
+  item.setAttribute("role", "button");
+  item.setAttribute("aria-label", `Attach session result ${row.title ?? row.sessionId} as Pi source context`);
+  const badges = `${row.isSubagent ? '<span class="badge">subagent</span>' : ""}${row.isBatch ? '<span class="badge">batch run</span>' : ""}`;
   item.innerHTML = `<div class="result-head"><strong><a href="/session/${encodeURIComponent(row.sessionId)}">[${escapeHtml(row.provider)}] ${escapeHtml(row.title ?? "Untitled")}</a>${badges}</strong><span class="token-count" title="Estimated from indexed transcript text">${formatNumber(row.tokenEstimate ?? estimateTokens(`${row.title ?? ""}\n${row.snippet ?? ""}`))} tokens</span></div><div class="muted">${escapeHtml(row.startedAt ?? "unknown date")}${row.cwd ? ` · ${escapeHtml(row.cwd)}` : ""}</div>${row.isSubagent ? `<div class="muted">Grouped under: ${escapeHtml(row.groupLabel ?? row.parentTitle ?? "primary session")}</div>` : ""}<div class="muted">${escapeHtml(row.path)}</div><p>${highlight(row.snippet ?? "")}</p>`;
-  item.addEventListener("click", (event) => {
-    if ((event.target as HTMLElement).closest("a,button")) return;
+  const selectResult = (): void => {
     setSelectedChatItem({ kind: "session result", label: row.title ?? row.sessionId, data: summarizeSearchResult(row) });
     item.classList.add("selected-for-chat");
+  };
+  item.addEventListener("click", (event) => {
+    if ((event.target as HTMLElement).closest("a,button")) return;
+    selectResult();
+  });
+  item.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    selectResult();
   });
   item.querySelector("a")?.addEventListener("click", (event) => { event.preventDefault(); history.pushState(null, "", `/session/${encodeURIComponent(row.sessionId)}`); setTab("session"); });
   return item;
@@ -224,15 +358,91 @@ function existingOrNewPiChatId(): string {
   return created;
 }
 
-function resetPiChat(): void {
-  piChatId = crypto.randomUUID();
+function loadPiChats(fallbackId: string): PiChat[] {
+  const raw = localStorage.getItem(piChatsKey);
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed)) {
+        const chats = parsed.map(parsePiChat).filter((chat): chat is PiChat => Boolean(chat));
+        if (chats.length) {
+          if (!chats.some((chat) => chat.id === fallbackId)) chats.push({ id: fallbackId, history: [] });
+          return chats.slice(-12);
+        }
+      }
+    } catch {
+      // Fall back to a single legacy chat if stored tab state is unreadable.
+    }
+  }
+  return [{ id: fallbackId, history: [] }];
+}
+
+function parsePiChat(value: unknown): PiChat | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const id = typeof record.id === "string" && record.id.trim() ? record.id.trim() : null;
+  const rawHistory = Array.isArray(record.history) ? record.history : [];
+  if (!id) return null;
+  return { id, history: rawHistory.map(parseChatMessage).filter((message): message is ChatMessage => Boolean(message)).slice(-40) };
+}
+
+function parseChatMessage(value: unknown): ChatMessage | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const role = record.role === "user" || record.role === "assistant" ? record.role : null;
+  const content = typeof record.content === "string" ? record.content : null;
+  return role && content !== null ? { role, content } : null;
+}
+
+function activeChat(): PiChat {
+  let chat = piChats.find((item) => item.id === piChatId);
+  if (!chat) {
+    chat = { id: piChatId, history: [] };
+    piChats.push(chat);
+    persistPiChats();
+  }
+  return chat;
+}
+
+function persistPiChats(): void {
   localStorage.setItem(piChatIdKey, piChatId);
-  chatHistory.length = 0;
-  element<HTMLDivElement>("chatMessages").replaceChildren(chatEmptyState());
+  localStorage.setItem(piChatsKey, JSON.stringify(piChats.slice(-12)));
+}
+
+function createPiChatTab(): void {
+  const chat = { id: crypto.randomUUID(), history: [] };
+  piChats.push(chat);
+  piChatId = chat.id;
+  persistPiChats();
+  renderChatMessages();
   setSelectedChatItem(null);
   updateChatSessionPill();
-  setPiStatus(`Started new persistent Pi chat ${piChatId.slice(0, 8)}.`);
   updatePiContextPreview();
+  setPiStatus(`Opened new Pi chat tab ${piChatId.slice(0, 8)}. Current screen sources stay visible above the composer.`);
+  element<HTMLTextAreaElement>("piPrompt").focus();
+}
+
+function switchPiChat(id: string): void {
+  if (!piChats.some((chat) => chat.id === id)) return;
+  piChatId = id;
+  persistPiChats();
+  renderChatMessages();
+  updateChatSessionPill();
+  updatePiContextPreview();
+  setPiStatus(`Switched to Pi chat ${piChatId.slice(0, 8)}.`);
+}
+
+function closePiChat(id: string): void {
+  if (piChats.length <= 1) return;
+  const closingIndex = piChats.findIndex((chat) => chat.id === id);
+  if (closingIndex < 0) return;
+  piChats = piChats.filter((chat) => chat.id !== id);
+  if (piChatId === id) piChatId = piChats[Math.max(0, closingIndex - 1)]?.id ?? piChats[0]?.id ?? crypto.randomUUID();
+  persistPiChats();
+  renderChatMessages();
+  updateChatSessionPill();
+  updatePiContextPreview();
+  setPiStatus(`Closed Pi chat ${id.slice(0, 8)}.`);
 }
 
 async function sendPiChat(): Promise<void> {
@@ -240,32 +450,72 @@ async function sendPiChat(): Promise<void> {
   const message = input.value.trim();
   if (!message) return;
   input.value = "";
+  const history = activeChat().history;
   appendChatMessage("user", message);
-  chatHistory.push({ role: "user", content: message });
+  history.push({ role: "user", content: message });
+  persistPiChats();
+  updateChatSessionPill();
   piSendButton.disabled = true;
+  piNewChatButton.disabled = true;
+  const requestChatId = piChatId;
   const typing = appendTypingMessage();
-  setPiStatus("Pi xhigh is reading the loaded files and thinking…");
+  setPiStatus("Pi is reading the attached sources and thinking…");
   try {
     const payload = piPayload(message);
     const result = await postJson<{ ok: boolean; reply: string; message: string; chatId: string; continued: boolean; sessionDir: string; contextPath: string; attachedFiles: string[]; stderr?: string }>("/api/pi/chat", payload);
     typing.remove();
+    if (requestChatId !== piChatId) return;
     const reply = result.reply || result.stderr || result.message;
     appendChatMessage(result.ok ? "assistant" : "assistant", reply, result.ok ? undefined : "error");
-    chatHistory.push({ role: "assistant", content: reply });
-    setPiStatus(`${result.message} ${result.continued ? "Continued" : "Started"} persistent Pi session ${result.chatId.slice(0, 8)}. Attached ${result.attachedFiles.length} files. Context: ${result.contextPath}`);
+    activeChat().history.push({ role: "assistant", content: reply });
+    persistPiChats();
+    updateChatSessionPill();
+    setPiStatus(`${result.message} ${result.continued ? "Continued" : "Started"} Pi session ${result.chatId.slice(0, 8)}. Attached ${result.attachedFiles.length} source files. Context: ${result.contextPath}`);
   } catch (error) {
     typing.remove();
-    const text = `Failed to chat with Pi: ${error instanceof Error ? error.message : String(error)}`;
+    const text = piChatErrorText(error);
     appendChatMessage("assistant", text, "error");
     setPiStatus(text);
   } finally {
     piSendButton.disabled = false;
+    piNewChatButton.disabled = false;
   }
 }
 
 function piPayload(message: string): { chatId: string; message: string; screen: unknown; selectedItem: unknown; files: string[]; history: ChatMessage[] } {
   const screen = screenContext();
-  return { chatId: piChatId, message, screen, selectedItem: selectedChatItem, files: relatedFiles(), history: chatHistory.slice(-12) };
+  return { chatId: piChatId, message, screen, selectedItem: selectedChatItem, files: relatedFiles(), history: activeChat().history.slice(-12) };
+}
+
+function piChatErrorText(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  const parsed = parseJsonObject(raw);
+  const message = (stringField(parsed, "message") || raw).replace(/[.\s]+$/, "");
+  const contextPath = stringField(parsed, "contextPath");
+  const attachedFiles = arrayField(parsed, "attachedFiles");
+  const retryHint = message.includes("timed out") ? " Try unchecking full transcript files in the source dropdown, then send again." : " Check the local Pi process, then try again.";
+  const sourceCount = attachedFiles ? ` Attached ${attachedFiles.length} source file${attachedFiles.length === 1 ? "" : "s"}.` : "";
+  const context = contextPath ? ` Context: ${contextPath}` : "";
+  return `Pi could not answer from the attached sources. ${message}.${retryHint}${sourceCount}${context}`;
+}
+
+function parseJsonObject(value: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+}
+
+function stringField(object: Record<string, unknown> | null, key: string): string | null {
+  const value = object?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function arrayField(object: Record<string, unknown> | null, key: string): unknown[] | null {
+  const value = object?.[key];
+  return Array.isArray(value) ? value : null;
 }
 
 function appendChatMessage(role: "user" | "assistant", content: string, extraClass = ""): void {
@@ -273,7 +523,9 @@ function appendChatMessage(role: "user" | "assistant", content: string, extraCla
   container.querySelector(".chat-empty")?.remove();
   const message = document.createElement("div");
   message.className = `chat-message ${role} ${extraClass}`.trim();
-  message.append(chatAvatar(role), chatBubble(content));
+  const bubble = chatBubble(content);
+  if (role === "assistant" && extraClass !== "error") bubble.append(sourceNoteNode());
+  message.append(chatAvatar(role), bubble);
   container.append(message);
   container.scrollTop = container.scrollHeight;
 }
@@ -326,12 +578,60 @@ function chatContentNodes(content: string): Node[] {
 function chatEmptyState(): HTMLElement {
   const empty = document.createElement("div");
   empty.className = "chat-empty";
-  empty.textContent = "Ask about the current search results or session transcript. Click any result/group/turn to pin it as context.";
+  empty.textContent = "Ask about the current results or transcript. Select a result, group, or turn to attach it as source context.";
   return empty;
 }
 
 function updateChatSessionPill(): void {
   element<HTMLElement>("chatSessionPill").textContent = `chat ${piChatId.slice(0, 8)}`;
+  renderChatTabs();
+}
+
+function renderChatTabs(): void {
+  chatTabs.replaceChildren(...piChats.map(chatTabNode));
+}
+
+function chatTabNode(chat: PiChat): HTMLElement {
+  const tab = document.createElement("div");
+  tab.className = `chat-tab${chat.id === piChatId ? " active" : ""}`;
+  tab.setAttribute("role", "tab");
+  tab.setAttribute("aria-selected", String(chat.id === piChatId));
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "chat-tab-button";
+  button.textContent = chatTabLabel(chat);
+  button.title = `Switch to chat ${chat.id}`;
+  button.addEventListener("click", () => switchPiChat(chat.id));
+  tab.append(button);
+  if (piChats.length > 1) {
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "chat-tab-close";
+    close.textContent = "×";
+    close.title = `Close chat ${chat.id.slice(0, 8)}`;
+    close.addEventListener("click", (event) => {
+      event.stopPropagation();
+      closePiChat(chat.id);
+    });
+    tab.append(close);
+  }
+  return tab;
+}
+
+function chatTabLabel(chat: PiChat): string {
+  const firstUser = chat.history.find((message) => message.role === "user")?.content.trim();
+  return firstUser ? truncateForContext(firstUser.replace(/\s+/g, " "), 22) : `chat ${chat.id.slice(0, 8)}`;
+}
+
+function renderChatMessages(): void {
+  const container = element<HTMLDivElement>("chatMessages");
+  container.replaceChildren();
+  const history = activeChat().history;
+  if (!history.length) {
+    container.append(chatEmptyState());
+    return;
+  }
+  for (const message of history) appendChatMessage(message.role, message.content);
 }
 
 function setSelectedChatItem(item: SelectedChatItem | null): void {
@@ -342,6 +642,7 @@ function setSelectedChatItem(item: SelectedChatItem | null): void {
   chip.hidden = !item;
   label.textContent = item ? `${item.kind}: ${item.label}` : "";
   updatePiContextPreview();
+  updateSourceChips();
 }
 
 function screenContext(): unknown {
@@ -427,29 +728,199 @@ function summarizeSearchResult(row: SearchResult): unknown {
   };
 }
 
+function screenSourceFiles(): string[] {
+  if (activeTab === "session" && currentSessionDetails) return [currentSessionDetails.path];
+  if (activeTab === "search") return uniqueStrings(lastSearchRows.slice(0, 80).map((row) => row.path));
+  return [];
+}
+
 function relatedFiles(): string[] {
-  const files = new Set<string>();
-  for (const row of lastSearchRows.slice(0, 80)) files.add(row.path);
-  if (currentSessionDetails) {
-    files.add(currentSessionDetails.path);
-    for (const row of currentSessionDetails.linkedSessions) files.add(row.path);
-  }
-  return [...files].filter(Boolean);
+  refreshSourceFileSelection();
+  return screenSourceFiles().filter((file) => !excludedSourceFiles.has(file));
+}
+
+function refreshSourceFileSelection(): void {
+  const available = screenSourceFiles();
+  const signature = `${activeTab}:${currentSessionDetails?.sessionId ?? ""}:${available.join("\n")}`;
+  if (signature === lastSourceSignature) return;
+  const availableSet = new Set(available);
+  excludedSourceFiles = new Set([...excludedSourceFiles].filter((file) => availableSet.has(file)));
+  lastSourceSignature = signature;
+}
+
+function uniqueStrings(items: string[]): string[] {
+  return [...new Set(items.filter(Boolean))];
 }
 
 function updatePiContextPreview(): void {
+  refreshSourceFileSelection();
+  const availableFiles = screenSourceFiles();
   const files = relatedFiles();
   const preview = {
     chatId: piChatId,
     tab: activeTab,
     files: files.slice(0, 20),
     fileCount: files.length,
+    availableFileCount: availableFiles.length,
+    excludedFileCount: availableFiles.length - files.length,
     selectedItem: selectedChatItem ? { kind: selectedChatItem.kind, label: selectedChatItem.label } : null,
     currentSession: currentSessionDetails ? { id: currentSessionDetails.sessionId, title: currentSessionDetails.title, path: currentSessionDetails.path } : null,
     searchResults: activeTab === "search" ? lastSearchRows.length : undefined,
     usageRows: activeTab === "usage" ? lastUsageResponse?.summary.length ?? 0 : undefined,
   };
   element<HTMLPreElement>("piContextPreview").textContent = JSON.stringify(preview, null, 2);
+  updateSourceChips();
+}
+
+function updateSourceChips(): void {
+  const target = element<HTMLDivElement>("sourceChips");
+  refreshSourceFileSelection();
+  const availableFiles = screenSourceFiles();
+  const files = relatedFiles();
+  const chips: HTMLElement[] = [sourceChip(`tab: ${activeTab}`)];
+  chips.push(sourceFilePicker(availableFiles, files));
+  if (currentSessionDetails) chips.push(sourceChip(`session: ${truncateForContext(currentSessionDetails.title ?? currentSessionDetails.sessionId, 42)}`));
+  if (selectedChatItem) chips.push(sourceChip(`selected: ${truncateForContext(selectedChatItem.label, 42)}`, () => setSelectedChatItem(null)));
+  target.replaceChildren(...chips);
+}
+
+function sourceFilePicker(availableFiles: string[], selectedFiles: string[]): HTMLElement {
+  const details = document.createElement("details");
+  details.className = "source-picker";
+  const summary = document.createElement("summary");
+  const selectedCount = selectedFiles.length;
+  summary.textContent = `${selectedCount}/${availableFiles.length} source file${availableFiles.length === 1 ? "" : "s"}`;
+  summary.title = "Choose which current-screen transcript files Pi should receive as full @file attachments.";
+  details.append(summary);
+
+  const panel = document.createElement("div");
+  panel.className = "source-picker-panel";
+  const hint = document.createElement("p");
+  hint.className = "muted";
+  hint.textContent = availableFiles.length ? "Checked files are attached in full. Uncheck noisy transcripts to keep Pi fast." : "No full transcript files are available for this screen.";
+  const actions = document.createElement("div");
+  actions.className = "source-picker-actions";
+  const all = smallButton("All", () => { excludedSourceFiles.clear(); updatePiContextPreview(); });
+  const none = smallButton("None", () => { excludedSourceFiles = new Set(availableFiles); updatePiContextPreview(); });
+  actions.append(all, none);
+  const list = document.createElement("div");
+  list.className = "source-file-list";
+  for (const file of availableFiles) list.append(sourceFileRow(file));
+  panel.append(hint, actions, list);
+  details.append(panel);
+  return details;
+}
+
+function sourceFileRow(file: string): HTMLElement {
+  const row = document.createElement("label");
+  row.className = "source-file-row";
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.checked = !excludedSourceFiles.has(file);
+  input.addEventListener("change", () => {
+    if (input.checked) excludedSourceFiles.delete(file);
+    else excludedSourceFiles.add(file);
+    updatePiContextPreview();
+  });
+  const pathText = document.createElement("span");
+  pathText.className = "source-file-path";
+  pathText.title = file;
+  pathText.textContent = file;
+  const remove = smallButton("×", () => { excludedSourceFiles.add(file); updatePiContextPreview(); });
+  remove.classList.add("source-remove");
+  remove.title = "Remove this file from Pi context";
+  row.append(input, pathText, remove);
+  return row;
+}
+
+function smallButton(label: string, action: () => void): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "mini-action";
+  button.textContent = label;
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    action();
+  });
+  return button;
+}
+
+function sourceNoteNode(): HTMLElement {
+  const note = document.createElement("div");
+  note.className = "chat-sources";
+  const files = relatedFiles();
+  note.append(sourceChip(`${files.length} attached source${files.length === 1 ? "" : "s"}`));
+  if (selectedChatItem) note.append(sourceChip(`selected ${selectedChatItem.kind}: ${truncateForContext(selectedChatItem.label, 42)}`));
+  if (currentSessionDetails) note.append(sourceChip(`session ${currentSessionDetails.sessionId.slice(0, 8)}`));
+  return note;
+}
+
+function sourceChip(text: string, onRemove?: () => void): HTMLElement {
+  const chip = document.createElement("span");
+  chip.className = `source-chip${onRemove ? " removable" : ""}`;
+  chip.title = text;
+  const label = document.createElement("span");
+  label.textContent = text;
+  chip.append(label);
+  if (onRemove) {
+    const remove = smallButton("×", onRemove);
+    remove.classList.add("source-chip-remove");
+    remove.title = `Remove ${text}`;
+    chip.append(remove);
+  }
+  return chip;
+}
+
+function emptyStateNode(title: string, body: string, actions: Array<{ label: string; action: () => void }> = [], command?: string): HTMLElement {
+  const wrapper = document.createElement("div");
+  wrapper.className = "empty-state muted";
+  const heading = document.createElement("strong");
+  heading.textContent = title;
+  const copy = document.createElement("p");
+  copy.textContent = body;
+  wrapper.append(heading, copy);
+  if (command) {
+    const code = document.createElement("code");
+    code.textContent = command;
+    wrapper.append(code);
+  }
+  if (actions.length) {
+    const actionRow = document.createElement("div");
+    actionRow.className = "empty-actions";
+    for (const spec of actions) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = spec.label;
+      button.addEventListener("click", spec.action);
+      actionRow.append(button);
+    }
+    wrapper.append(actionRow);
+  }
+  return wrapper;
+}
+
+function renderActiveError(title: string, error: unknown, recovery: string): void {
+  const detail = error instanceof Error ? error.message : String(error);
+  const node = emptyStateNode(title, `${recovery} Details: ${detail}`, [{ label: "Retry", action: () => void run() }]);
+  if (activeTab === "search") element<HTMLDivElement>("results").replaceChildren(node);
+  else if (activeTab === "usage") element<HTMLDivElement>("usageTable").replaceChildren(node);
+  else element<HTMLDivElement>("sessionDetails").replaceChildren(node);
+  setStatus(`${title} ${detail}`);
+}
+
+function hasSearchConstraints(): boolean {
+  return Boolean(value("query") || value("provider") || value("cwd") || value("pathFilter") || value("startDate") || value("endDate") || value("groupBy") || value("batchMode") !== "include");
+}
+
+function clearFilters(): void {
+  for (const id of ["query", "provider", "cwd", "pathFilter", "startDate", "endDate", "groupBy"] as const) element<HTMLInputElement | HTMLSelectElement>(id).value = "";
+  element<HTMLSelectElement>("kind").value = "tool";
+  element<HTMLSelectElement>("bucket").value = "day";
+  element<HTMLSelectElement>("batchMode").value = "include";
+  element<HTMLInputElement>("limit").value = "100";
+  setSelectedChatItem(null);
+  setStatus("Filters cleared. Run the query to reload all sessions.");
 }
 
 function setPiStatus(message: string): void { element<HTMLElement>("piStatus").textContent = message; }
@@ -459,7 +930,7 @@ function renderSession(details: SessionDetails): void {
   const target = element<HTMLDivElement>("sessionDetails");
   const tools = details.usage.filter((entry) => entry.kind === "tool");
   const skills = details.usage.filter((entry) => entry.kind === "skill");
-  target.innerHTML = `<p><a href="/">← Back to search</a></p><h3>${escapeHtml(details.title ?? "Untitled")}</h3><p class="muted">${escapeHtml(details.provider)} · ${escapeHtml(details.startedAt ?? "unknown date")} · ${details.isBatch ? "batch-like" : "non-batch"}</p><p><strong>Purpose:</strong> ${escapeHtml(details.purpose ?? "Unknown")}</p><p><strong>CWD:</strong> ${escapeHtml(details.cwd ?? "Unknown")}</p><p><strong>Path:</strong> ${escapeHtml(details.path)}</p><div class="cards"><div class="card"><strong>${details.turnCount}</strong><br />turns</div><div class="card"><strong>${details.toolUseCount}</strong><br />tool uses</div><div class="card"><strong>${details.skillUseCount}</strong><br />skill mentions</div><div class="card"><strong>${details.linkedSessions.length}</strong><br />linked sessions</div></div><h3>Turn activity</h3><p class="muted">Click a bar to jump to that turn. Tool/skill bars are heuristic; tables use indexed usage signals.</p><div class="chart-wrap"><canvas id="sessionTurnChart"></canvas></div><h3>Tools</h3><div id="sessionTools"></div><h3>Skills</h3><div id="sessionSkills"></div><h3>Linked subagent / nearby sessions</h3><div id="linkedSessions"></div><h3>Transcript</h3><div class="transcript-controls"><label>Default visible lines <input id="transcriptLineLimit" type="number" min="3" max="500" value="${transcriptLineLimit()}" /></label><button id="expandAllTurns">Expand all</button><button id="collapseAllTurns">Collapse all</button><label>Item type <select id="turnTypeSelect"></select></label><button id="expandTypeTurns">Expand type</button><button id="collapseTypeTurns">Collapse type</button><button id="applyLineLimit">Apply line limit</button></div><div class="session-layout"><nav class="turn-sidebar" id="turnSidebar"></nav><div class="transcript" id="transcript"></div></div>`;
+  target.innerHTML = `<p><a href="/">← Back to search</a></p><h3>${escapeHtml(details.title ?? "Untitled")}</h3><p class="muted">${escapeHtml(details.provider)} · ${escapeHtml(details.startedAt ?? "unknown date")} · ${details.isBatch ? "batch run" : "standard run"}</p><p><strong>Purpose:</strong> ${escapeHtml(details.purpose ?? "Unknown")}</p><p><strong>Working directory:</strong> ${escapeHtml(details.cwd ?? "Unknown")}</p><p><strong>Path:</strong> ${escapeHtml(details.path)}</p><div class="session-meta-strip"><span class="session-meta-pill"><strong>${details.turnCount}</strong> turns</span><span class="session-meta-pill"><strong>${details.toolUseCount}</strong> tool uses</span><span class="session-meta-pill"><strong>${details.skillUseCount}</strong> skill mentions</span><span class="session-meta-pill"><strong>${details.linkedSessions.length}</strong> linked sessions</span></div><h3>Transcript</h3><div class="transcript-controls"><fieldset class="transcript-control-group"><legend>View</legend><div class="transcript-control-row"><label>Visible lines <input id="transcriptLineLimit" type="number" min="3" max="500" value="${transcriptLineLimit()}" /></label><button id="applyLineLimit">Apply</button></div></fieldset><fieldset class="transcript-control-group"><legend>All turns</legend><div class="transcript-control-row"><button id="expandAllTurns">Expand all</button><button id="collapseAllTurns">Collapse all</button></div></fieldset><fieldset class="transcript-control-group"><legend>By type</legend><div class="transcript-control-row"><label>Item type <select id="turnTypeSelect"></select></label><button id="expandTypeTurns">Expand</button><button id="collapseTypeTurns">Collapse</button></div></fieldset></div><div class="session-layout"><nav class="turn-sidebar" id="turnSidebar"></nav><div class="transcript" id="transcript"></div></div><details class="session-analysis"><summary>Turn analytics and linked sessions</summary><h3>Turn activity</h3><p class="muted">Click a bar to jump to that turn. Tool and skill bars are derived from indexed usage signals.</p><div class="chart-wrap"><canvas id="sessionTurnChart"></canvas></div><h3>Tools</h3><div id="sessionTools"></div><h3>Skills</h3><div id="sessionSkills"></div><h3>Linked subagent / nearby sessions</h3><div id="linkedSessions"></div></details>`;
   target.querySelector("a")?.addEventListener("click", (event) => { event.preventDefault(); history.pushState(null, "", "/"); setTab("search"); });
   const turnCanvas = element<HTMLCanvasElement>("sessionTurnChart");
   turnChart = replaceChart(turnChart, turnCanvas, turnChartConfig(details.transcript));
@@ -479,6 +950,11 @@ function renderTranscript(items: TranscriptItem[]): void {
   const nav = element<HTMLElement>("turnSidebar");
   const transcript = element<HTMLElement>("transcript");
   nav.replaceChildren(); transcript.replaceChildren();
+  if (!items.length) {
+    transcript.replaceChildren(emptyStateNode("No transcript turns were indexed.", "The raw session file exists, but no readable turns were derived. Re-run ingest, then reload this session."));
+    nav.replaceChildren(emptyStateNode("No turns", "Turn navigation appears after transcript turns are indexed."));
+    return;
+  }
   for (const item of items) {
     const id = `turn-${item.index}`;
     const link = document.createElement("a");
@@ -489,6 +965,9 @@ function renderTranscript(items: TranscriptItem[]): void {
     const card = document.createElement("article");
     card.id = id;
     card.className = `turn-card ${cssRole(item.role)}`;
+    card.tabIndex = 0;
+    card.setAttribute("role", "button");
+    card.setAttribute("aria-label", `Attach transcript turn ${item.index} as Pi source context`);
     const direction = modelDirection(item.role);
     card.dataset.role = cssRole(item.role);
     card.dataset.direction = direction.kind;
@@ -499,14 +978,22 @@ function renderTranscript(items: TranscriptItem[]): void {
     const content = document.createElement("div");
     content.className = "turn-content";
     content.append(renderFormattedContent(item));
-    card.addEventListener("click", (event) => {
-      if ((event.target as HTMLElement).closest("a,button")) return;
+    const selectTurn = (): void => {
       setSelectedChatItem({
         kind: "transcript turn",
         label: `#${item.index} ${item.role}`,
         data: { index: item.index, role: item.role, tokenEstimate: estimateTokens(item.content), content: item.content, sessionPath: currentSessionDetails?.path },
       });
       card.classList.add("selected-for-chat");
+    };
+    card.addEventListener("click", (event) => {
+      if ((event.target as HTMLElement).closest("a,button")) return;
+      selectTurn();
+    });
+    card.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      selectTurn();
     });
     card.append(head, content);
     applyTurnLineLimit(card, transcriptLineLimit());
@@ -727,8 +1214,8 @@ function highlightTurn(index: number): void { document.querySelectorAll(".turn-c
 function palette(index: number): string { return `hsl(${(index * 47) % 360} 75% 62%)`; }
 function cssRole(role: string): string { return role.toLowerCase().replace(/[^a-z0-9_-]/g, ""); }
 
-function drawUsageTable(rows: UsageSummaryRow[], target: HTMLDivElement): void { if (!rows.length) { target.textContent = "No usage signals found."; return; } target.innerHTML = `<table><thead><tr><th>Name</th><th>Uses</th><th>Sessions</th></tr></thead><tbody>${rows.slice(0, 100).map((row) => `<tr><td>${escapeHtml(row.name)}</td><td>${row.count}</td><td>${row.sessions}</td></tr>`).join("")}</tbody></table>`; }
-function renderLinked(rows: SearchResult[], target: HTMLDivElement): void { if (!rows.length) { target.textContent = "No explicit linked or same-run subagent sessions found."; return; } target.innerHTML = rows.map((row) => `<div class="result"><a href="/session/${encodeURIComponent(row.sessionId)}">[${escapeHtml(row.provider)}] ${escapeHtml(row.title ?? "Untitled")}</a><div class="muted">${escapeHtml(row.reason ?? "linked")} · ${escapeHtml(row.startedAt ?? "unknown")} · ${escapeHtml(row.path)}</div></div>`).join(""); target.querySelectorAll("a").forEach((link) => link.addEventListener("click", (event) => { event.preventDefault(); history.pushState(null, "", (event.currentTarget as HTMLAnchorElement).pathname); setTab("session"); })); }
+function drawUsageTable(rows: UsageSummaryRow[], target: HTMLDivElement): void { if (!rows.length) { target.replaceChildren(emptyStateNode("No usage signals found.", "Try a broader query, switch signal type, or ingest sessions that include tool and skill activity.")); return; } target.innerHTML = `<table><thead><tr><th>Name</th><th>Uses</th><th>Sessions</th></tr></thead><tbody>${rows.slice(0, 100).map((row) => `<tr><td>${escapeHtml(row.name)}</td><td>${row.count}</td><td>${row.sessions}</td></tr>`).join("")}</tbody></table>`; }
+function renderLinked(rows: SearchResult[], target: HTMLDivElement): void { if (!rows.length) { target.replaceChildren(emptyStateNode("No linked sessions found.", "No explicit subagent or same-run sessions are attached to this transcript.")); return; } target.innerHTML = rows.map((row) => `<div class="result"><a href="/session/${encodeURIComponent(row.sessionId)}">[${escapeHtml(row.provider)}] ${escapeHtml(row.title ?? "Untitled")}</a><div class="muted">${escapeHtml(row.reason ?? "linked")} · ${escapeHtml(row.startedAt ?? "unknown")} · ${escapeHtml(row.path)}</div></div>`).join(""); target.querySelectorAll("a").forEach((link) => link.addEventListener("click", (event) => { event.preventDefault(); history.pushState(null, "", (event.currentTarget as HTMLAnchorElement).pathname); setTab("session"); })); }
 function params(): URLSearchParams { const query = new URLSearchParams(); for (const key of ["query", "provider", "cwd", "startDate", "endDate", "batchMode", "limit"] as const) { const val = value(key); if (val) query.set(key, val); } const pathFilter = value("pathFilter"); if (pathFilter) query.set("path", pathFilter); return query; }
 function groupMode(): GroupMode { const raw = value("groupBy"); return raw === "cwd" || raw === "provider" || raw === "primary" ? raw : "none"; }
 async function getJson<T>(url: string): Promise<T> { const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 30_000); try { const response = await fetch(url, { signal: controller.signal }); if (!response.ok) throw new Error(await response.text()); return response.json() as Promise<T>; } finally { clearTimeout(timeout); } }

@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { filterOptions, openDb, searchFilteredSessions, sessionDetails, usageSummary, usageTimeline } from "./db.js";
@@ -90,23 +90,25 @@ async function chatWithPi(request: IncomingMessage, response: ServerResponse): P
   const contextPath = path.join(outDir, "screen-context.json");
   const promptPath = path.join(outDir, "prompt.md");
   const appSourceFiles = sessionReviewSourceFiles();
-  const files = uniqueFiles([...(payload.files ?? []), ...appSourceFiles]);
+  const requestedFiles = uniqueFiles([...(payload.files ?? []), ...appSourceFiles]);
+  const { existingFiles, missingFiles } = await splitExistingFiles(requestedFiles);
   const context = {
     chatId,
     generatedAt: new Date().toISOString(),
     screen: payload.screen ?? null,
     selectedItem: payload.selectedItem ?? null,
     history: (payload.history ?? []).slice(-12),
-    files,
-    note: "Pi receives this context file plus every file listed here as @file attachments, so it can inspect the full file contents loaded for the current screen.",
+    files: existingFiles,
+    missingFiles,
+    note: "Pi receives this context file plus every existing file listed here as @file attachments, so it can inspect the full file contents loaded for the current screen. Missing files are listed separately because the local transcript index can contain stale paths after sessions are moved or deleted.",
   };
 
   await writeFile(contextPath, `${JSON.stringify(context, null, 2)}\n`, "utf8");
   await writeFile(promptPath, piChatPrompt(message, contextPath), "utf8");
-  const attachedFiles = uniqueFiles([contextPath, ...files]);
+  const attachedFiles = uniqueFiles([contextPath, ...existingFiles]);
   const continued = await hasExistingPiSession(sessionDir);
   const result = await runPiPrint(promptPath, attachedFiles, sessionDir, continued);
-  return sendJson(response, result.ok ? 200 : 500, { ...result, chatId, continued, sessionDir, contextPath, attachedFiles });
+  return sendJson(response, result.ok ? 200 : 500, { ...result, chatId, continued, sessionDir, contextPath, attachedFiles, missingFiles });
 }
 
 function sessionReviewSourceFiles(): string[] {
@@ -120,6 +122,24 @@ function sessionReviewSourceFiles(): string[] {
 
 function uniqueFiles(files: string[]): string[] {
   return [...new Set(files.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim()))];
+}
+
+async function splitExistingFiles(files: string[]): Promise<{ existingFiles: string[]; missingFiles: string[] }> {
+  const existingFiles: string[] = [];
+  const missingFiles: string[] = [];
+  for (const file of files) {
+    try {
+      const fileStat = await stat(file);
+      if (fileStat.isFile()) {
+        existingFiles.push(file);
+      } else {
+        missingFiles.push(file);
+      }
+    } catch {
+      missingFiles.push(file);
+    }
+  }
+  return { existingFiles, missingFiles };
 }
 
 function safeChatId(value: string | undefined): string | null {
