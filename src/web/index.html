@@ -214,7 +214,7 @@
       .filter-toggle:hover, .top-control:hover { transform:none; filter:brightness(1.08); }
       .control-icon { width:16px; height:16px; color:#cbd3e5; flex:0 0 auto; }
       .top-control { min-width:150px; padding:0 38px 0 14px; }
-      .top-search { width:min(320px,30vw); display:grid; grid-template-columns:18px minmax(0,1fr) auto; align-items:center; gap:9px; padding:0 8px 0 12px; }
+      .top-search { width:min(320px,30vw); display:grid; grid-template-columns:18px minmax(0,1fr) auto auto; align-items:center; gap:9px; padding:0 8px 0 12px; }
       .top-search input { width:100%; min-height:0; padding:0; border:0; background:transparent; box-shadow:none; }
       .search-key { min-width:23px; padding:2px 6px; border:1px solid rgba(132,148,180,.22); border-radius:4px; color:#8a92a2; font:12px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; text-align:center; }
       .content-stack { display:grid; gap:10px; min-width:0; min-height:0; }
@@ -381,31 +381,56 @@
       .nav-item:disabled { opacity:.45; cursor:not-allowed; }
       .col-sorted::after { content:" \2193"; color:#8b94a8; font-size:10px; }
       @media (max-width: 720px) { .page-toolbar { align-items:flex-start; flex-direction:column; } .top-controls { width:100%; justify-content:stretch; } .filter-toggle, .top-control, .top-search { flex:1 1 100%; width:100%; } .filter-primary { grid-template-columns:1fr; } .mobile-nav-toggle { display:grid; place-items:center; } .left-sidebar { grid-template-rows:auto; padding:8px 12px 10px; } .side-nav, .sidebar-bottom { display:none; } body.mobile-nav-open .left-sidebar { position:fixed; inset:0; z-index:20; height:100vh; overflow-y:auto; padding-bottom:24px; grid-template-rows:auto 1fr auto; } body.mobile-nav-open .side-nav { display:grid; } body.mobile-nav-open .sidebar-bottom { display:grid; } .main-cockpit { height:auto; min-height:calc(100vh - 60px); overflow:visible; } .content-stack { height:auto; } #results { overflow-x:auto; } .evidence-table { min-width:900px; } .search-key { display:none; } .drawer-top { grid-template-columns:1fr 1fr; gap:10px; } .drawer-columns { grid-template-columns:1fr 1fr; } .drawer-column + .drawer-column { padding-left:10px; border-left:0; border-top:1px solid rgba(132,148,180,.12); padding-top:10px; } }
+      /* INV-3: Brand as home link */
+      .brand-link { display:flex; align-items:center; gap:12px; text-decoration:none; color:inherit; border-radius:4px; padding:2px; margin:-2px; min-height:36px; flex:1 1 auto; min-width:0; }
+      .brand-link:hover .brand-name { color:#f0f4ff; }
+      .brand-link:focus-visible { outline:none; box-shadow:var(--focus); }
+      /* INV-3: Nav stub group (collapsed disabled items) */
+      .nav-stub-group { border:0; background:transparent; padding:0; width:100%; min-width:0; color:inherit; }
+      .nav-stub-summary { display:grid !important; list-style:none; cursor:pointer; user-select:none; }
+      .nav-stub-summary::-webkit-details-marker { display:none; }
+      .nav-stub-summary::marker { content:""; }
+      .nav-stub-group[open] > .nav-stub-summary { color:#8fb0ff; background:linear-gradient(90deg,rgba(86,128,255,.14),rgba(86,128,255,.04)); border-color:rgba(91,130,255,.14); box-shadow:inset 3px 0 #5a87ff; }
+      .nav-stub-items { display:grid; gap:3px; padding:4px 0 2px 0; }
+      .nav-stub-items .nav-item { opacity:.42; min-height:38px; font-size:13px; }
+      /* INV-4: Active filter indicator dot */
+      .filter-toggle { position:relative; }
+      .filter-toggle--active::after { content:""; position:absolute; top:8px; right:8px; width:7px; height:7px; border-radius:50%; background:#7c9cff; pointer-events:none; }
+      /* INV-4: Search clear button */
+      .search-clear { min-height:0; padding:0 6px; border:0; background:transparent; color:var(--muted); box-shadow:none; font-size:13px; border-radius:3px; line-height:1; }
+      .search-clear:hover { transform:none; filter:none; color:var(--text); }
     </style>
   </head>
   <body>
 <div id="appShell" class="app-shell">
 <aside id="leftSidebar" class="left-sidebar" aria-label="Primary navigation">
-  <div class="brand" aria-label="Session Review">
-    <div class="brand-mark">›_</div>
-    <div class="brand-name">Session Review</div>
+  <div class="brand">
+    <a href="/" class="brand-link" aria-label="Session Review — go to sessions list">
+      <div class="brand-mark">›_</div>
+      <div class="brand-name">Session Review</div>
+    </a>
     <button id="mobileNavToggle" class="mobile-nav-toggle" type="button" aria-label="Toggle navigation" aria-expanded="false" aria-controls="leftSidebar">☰</button>
   </div>
   <nav class="side-nav">
-    <button class="nav-item" type="button" aria-pressed="false" disabled><span class="nav-icon">⌂</span><span class="nav-label">Overview</span></button>
     <button id="searchTab" class="nav-item" type="button" aria-pressed="true"><span class="nav-icon">▣</span><span class="nav-label">Sessions</span><span id="sessionsNavCount" class="nav-count">—</span></button>
-    <button class="nav-item" type="button" aria-pressed="false" disabled><span class="nav-icon">⌗</span><span class="nav-label">Evidence</span></button>
-    <button class="nav-item" type="button" aria-pressed="false" disabled><span class="nav-icon">⌘</span><span class="nav-label">Agents</span></button>
-    <button class="nav-item" type="button" aria-pressed="false" disabled><span class="nav-icon">□</span><span class="nav-label">Projects</span></button>
-    <button class="nav-item" type="button" aria-pressed="false" disabled><span class="nav-icon">∞</span><span class="nav-label">Relations</span></button>
-    <button class="nav-item" type="button" aria-pressed="false" disabled><span class="nav-icon">☷</span><span class="nav-label">Batches</span></button>
-    <button class="nav-item" type="button" aria-pressed="false" disabled><span class="nav-icon">✧</span><span class="nav-label">Skills</span></button>
-    <button id="usageTab" class="nav-item" type="button" aria-pressed="false"><span class="nav-icon">⌘</span><span class="nav-label">Tools</span></button>
-    <button class="nav-item" type="button" aria-pressed="false" disabled><span class="nav-icon">⚙</span><span class="nav-label">Settings</span></button>
+    <button id="usageTab" class="nav-item" type="button" aria-pressed="false"><span class="nav-icon">⊙</span><span class="nav-label">Tools</span></button>
+    <details class="nav-stub-group">
+      <summary class="nav-item nav-stub-summary"><span class="nav-icon">⋯</span><span class="nav-label">More features</span><span class="nav-count">8</span></summary>
+      <div class="nav-stub-items">
+        <button class="nav-item" type="button" disabled><span class="nav-icon">⌂</span><span class="nav-label">Overview</span></button>
+        <button class="nav-item" type="button" disabled><span class="nav-icon">⌗</span><span class="nav-label">Evidence</span></button>
+        <button class="nav-item" type="button" disabled><span class="nav-icon">⌘</span><span class="nav-label">Agents</span></button>
+        <button class="nav-item" type="button" disabled><span class="nav-icon">□</span><span class="nav-label">Projects</span></button>
+        <button class="nav-item" type="button" disabled><span class="nav-icon">∞</span><span class="nav-label">Relations</span></button>
+        <button class="nav-item" type="button" disabled><span class="nav-icon">☷</span><span class="nav-label">Batches</span></button>
+        <button class="nav-item" type="button" disabled><span class="nav-icon">✧</span><span class="nav-label">Skills</span></button>
+        <button class="nav-item" type="button" disabled><span class="nav-icon">⚙</span><span class="nav-label">Settings</span></button>
+      </div>
+    </details>
   </nav>
   <div class="sidebar-bottom">
     <div class="sidebar-footer">
-      <div class="admin-card"><span class="admin-avatar">A</span><span>admin</span><span aria-hidden="true">⌄</span></div>
+      <div class="admin-card"><span class="admin-avatar">A</span><span>admin</span></div>
       <button class="settings-quick" type="button" aria-label="Open settings" disabled>☼</button>
     </div>
   </div>
@@ -417,7 +442,7 @@
       <button id="filtersToggle" class="filter-toggle" type="button" aria-controls="filterPanel" aria-expanded="false"><svg class="control-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5h14l-5.5 6v4l-3 1v-5L3 5Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>Filters</button>
       <label class="visually-hidden" for="projectSelect">Project</label>
       <select id="projectSelect" class="top-control"><option value="">All projects</option></select>
-      <label class="top-search"><svg class="control-icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="m12.5 12.5 4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><input id="query" placeholder="Search sessions…" /><span class="search-key">/</span></label>
+      <label class="top-search"><svg class="control-icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="m12.5 12.5 4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><input id="query" placeholder="Search sessions…" /><button id="queryClear" class="search-clear" type="button" aria-label="Clear search" hidden>✕</button><span class="search-key">/</span></label>
     </div>
   </div>
   <div class="content-stack">

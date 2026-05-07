@@ -83,11 +83,20 @@ projectSelect.addEventListener("change", () => {
   void run();
 });
 element<HTMLInputElement>("cwd").addEventListener("input", syncProjectSelectFromCwd);
+const queryClearButton = document.getElementById("queryClear") as HTMLButtonElement | null;
+element<HTMLInputElement>("query").addEventListener("input", () => {
+  if (queryClearButton) queryClearButton.hidden = element<HTMLInputElement>("query").value === "";
+});
 element<HTMLInputElement>("query").addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
     event.preventDefault();
     void run();
   }
+});
+queryClearButton?.addEventListener("click", () => {
+  element<HTMLInputElement>("query").value = "";
+  if (queryClearButton) queryClearButton.hidden = true;
+  void run();
 });
 element<HTMLTextAreaElement>("piPrompt").addEventListener("keydown", (event) => {
   if (event.key === "Enter" && !event.shiftKey) {
@@ -99,9 +108,21 @@ const mobileNavToggle = document.getElementById("mobileNavToggle") as HTMLButton
 mobileNavToggle?.addEventListener("click", () => {
   const open = document.body.classList.toggle("mobile-nav-open");
   mobileNavToggle.setAttribute("aria-expanded", String(open));
+  mobileNavToggle.textContent = open ? "\u2715" : "\u2630";
 });
-document.querySelector<HTMLElement>(".side-nav")?.addEventListener("click", () => {
-  if (window.innerWidth <= 720) { document.body.classList.remove("mobile-nav-open"); mobileNavToggle?.setAttribute("aria-expanded", "false"); }
+document.querySelector<HTMLElement>(".side-nav")?.addEventListener("click", (event) => {
+  if (window.innerWidth <= 720) {
+    const clickedNavButton = (event.target as HTMLElement).closest<HTMLButtonElement>("button.nav-item:not([disabled])");
+    if (clickedNavButton) {
+      document.body.classList.remove("mobile-nav-open");
+      if (mobileNavToggle) { mobileNavToggle.setAttribute("aria-expanded", "false"); mobileNavToggle.textContent = "\u2630"; }
+    }
+  }
+});
+document.querySelector<HTMLAnchorElement>(".brand-link")?.addEventListener("click", (event) => {
+  event.preventDefault();
+  history.pushState(null, "", "/");
+  setTab("search");
 });
 document.querySelectorAll<HTMLButtonElement>(".nav-item[disabled], .settings-quick[disabled]").forEach((btn) => { if (!btn.title) btn.title = "Coming soon"; });
 window.addEventListener("popstate", () => {
@@ -192,7 +213,7 @@ async function init(): Promise<void> {
   try {
     const filters = await getJson<{ providers: string[]; cwd: string[] }>("/api/filters");
     for (const item of filters.providers) element<HTMLSelectElement>("provider").append(new Option(item, item));
-    for (const item of filters.cwd.slice(0, 80)) projectSelect.append(new Option(projectLabel(item), item));
+    for (const { label, value: val } of buildProjectOptions(filters.cwd.slice(0, 80))) projectSelect.append(new Option(label, val));
     await run();
   } catch (error) {
     renderActiveError("Could not load local session index.", error, "Check that the Session Review server is running, then retry.");
@@ -243,6 +264,22 @@ function projectLabel(cwd: string): string {
   return parts.at(-1) ?? cwd;
 }
 
+function buildProjectOptions(cwdList: string[]): Array<{ label: string; value: string }> {
+  const entries = cwdList.map((cwd) => {
+    const parts = cwd.split("/").filter(Boolean);
+    const shortLabel = parts.at(-1) ?? cwd;
+    return { cwd, parts, shortLabel };
+  });
+  const labelCount = new Map<string, number>();
+  for (const { shortLabel } of entries) labelCount.set(shortLabel, (labelCount.get(shortLabel) ?? 0) + 1);
+  return entries.map(({ cwd, parts, shortLabel }) => {
+    const isDuplicate = (labelCount.get(shortLabel) ?? 0) > 1;
+    const parent = parts.at(-2);
+    const label = isDuplicate && parent ? `${shortLabel} (${parent})` : shortLabel;
+    return { label, value: cwd };
+  });
+}
+
 async function run(): Promise<void> {
   const started = performance.now();
   setBusy(true, `Running ${activeTab} query…`);
@@ -254,6 +291,7 @@ async function run(): Promise<void> {
     renderActiveError("Query failed.", error, "Clear filters, retry, or check that the local Session Review server is still running.");
   } finally {
     setBusy(false);
+    filtersToggle.classList.toggle("filter-toggle--active", hasActiveFilterConstraints());
   }
 }
 
@@ -1191,6 +1229,17 @@ function renderActiveError(title: string, error: unknown, recovery: string): voi
 
 function hasSearchConstraints(): boolean {
   return Boolean(value("query") || value("provider") || value("cwd") || value("pathFilter") || value("startDate") || value("endDate") || value("groupBy") || value("batchMode") !== "include");
+}
+
+/** Stricter predicate for the Filters button dot: treats groupBy="none" (the HTML default) as inactive. */
+function hasActiveFilterConstraints(): boolean {
+  const groupBy = value("groupBy");
+  return Boolean(
+    value("query") || value("provider") || value("cwd") || value("pathFilter") ||
+    value("startDate") || value("endDate") ||
+    (groupBy && groupBy !== "none") ||
+    value("batchMode") !== "include"
+  );
 }
 
 function clearFilters(): void {
