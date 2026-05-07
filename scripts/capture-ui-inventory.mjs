@@ -9,11 +9,14 @@ const outDir = process.env.INVENTORY_OUT_DIR
 await mkdir(outDir, { recursive: true });
 
 function dbSessionId() {
+  const dbPath = `${process.env.HOME}/.local/share/session-review/sessions.sqlite`;
   try {
-    return execFileSync("sqlite3", [
-      `${process.env.HOME}/.local/share/session-review/sessions.sqlite`,
-      "select id from sessions order by started_at desc limit 1",
+    const stableSession = execFileSync("sqlite3", [
+      dbPath,
+      "select id from sessions where path like '%90021c07-9cef-44f8-b0dd-75c372946c03%' limit 1",
     ], { encoding: "utf8" }).trim();
+    if (stableSession) return stableSession;
+    return execFileSync("sqlite3", [dbPath, "select id from sessions order by started_at desc limit 1"], { encoding: "utf8" }).trim();
   } catch {
     return "";
   }
