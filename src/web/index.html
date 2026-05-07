@@ -27,7 +27,7 @@
       .filter-group label { margin-top:6px; }
       .advanced-filters summary { cursor:pointer; color:#cbd3e5; font-size:12px; width:max-content; }
       .shortcut-hint { color:var(--muted); font-size:12px; margin:0; }
-      body[data-active-tab="search"] #usageFilterGroup { display:none; }
+      /* usageFilterGroup moved to usagePanel toolbar (INV-7) */
       body[data-active-tab="usage"] .search-only-filter { display:none; }
       label { display: grid; gap: 3px; font-size: 12px; color: #aeb3c2; }
       fieldset { background: transparent; color: inherit; }
@@ -191,7 +191,16 @@
       .nav-item { width:100%; display:grid; grid-template-columns:24px minmax(0,1fr) auto; align-items:center; gap:10px; min-height:44px; padding:0 12px; border:1px solid transparent; border-radius:5px; color:#c7cedb; background:transparent; box-shadow:none; font-weight:500; text-align:left; }
       .nav-item:hover { transform:none; filter:none; color:#f3f6ff; background:rgba(255,255,255,.035); }
       .nav-item:disabled { opacity:1; cursor:default; }
-      .nav-item[aria-pressed="true"], .nav-item.active { color:#8fb0ff; background:linear-gradient(90deg,rgba(86,128,255,.18),rgba(86,128,255,.05)); border-color:rgba(91,130,255,.18); box-shadow:inset 3px 0 #5a87ff; }
+      .nav-item[aria-current="page"], .nav-item.active { color:#8fb0ff; background:linear-gradient(90deg,rgba(86,128,255,.18),rgba(86,128,255,.05)); border-color:rgba(91,130,255,.18); box-shadow:inset 3px 0 #5a87ff; }
+      /* INV-7: Usage toolbar above chart */
+      .usage-toolbar { display:flex; gap:12px; align-items:center; padding:8px 12px 6px; border-bottom:1px solid var(--chrome-border); background:rgba(14,18,24,.9); flex-wrap:wrap; }
+      .usage-control-label { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); }
+      .usage-control-label select { min-height:28px; padding:3px 24px 3px 8px; font-size:12px; }
+      #usageStatusLine { margin:0; padding:4px 12px; font-size:12px; min-height:1.4em; }
+      /* INV-7: HTML chart legend */
+      .chart-legend-html { display:flex; flex-wrap:wrap; gap:5px 14px; padding:6px 12px; min-height:1em; }
+      .legend-item::before { content:""; display:inline-block; width:12px; height:12px; border-radius:2px; background:var(--legend-color,#888); margin-right:5px; vertical-align:middle; }
+      .legend-item { display:inline-flex; align-items:center; font-size:12px; color:var(--muted); }
       .nav-icon { width:18px; display:inline-grid; place-items:center; color:currentColor; font-size:17px; }
       .nav-label { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
       .nav-count { min-width:38px; justify-self:end; padding:3px 7px; border-radius:5px; background:rgba(255,255,255,.09); color:#dce3f1; font:600 12px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; text-align:center; }
@@ -415,8 +424,8 @@
     <button id="mobileNavToggle" class="mobile-nav-toggle" type="button" aria-label="Toggle navigation" aria-expanded="false" aria-controls="leftSidebar">☰</button>
   </div>
   <nav class="side-nav">
-    <button id="searchTab" class="nav-item" type="button" aria-pressed="true"><span class="nav-icon">▣</span><span class="nav-label">Sessions</span><span id="sessionsNavCount" class="nav-count">—</span></button>
-    <button id="usageTab" class="nav-item" type="button" aria-pressed="false"><span class="nav-icon">⊙</span><span class="nav-label">Tools</span></button>
+    <button id="searchTab" class="nav-item" type="button" aria-current="page"><span class="nav-icon">▣</span><span class="nav-label">Sessions</span><span id="sessionsNavCount" class="nav-count">—</span></button>
+    <button id="usageTab" class="nav-item" type="button" aria-current="false"><span class="nav-icon">⊙</span><span class="nav-label">Tools</span></button>
     <details class="nav-stub-group">
       <summary class="nav-item nav-stub-summary"><span class="nav-icon">⋯</span><span class="nav-label">More features</span><span class="nav-count">8</span></summary>
       <div class="nav-stub-items">
@@ -477,21 +486,17 @@
               <label>Group by <select id="groupBy"><option value="none">None</option><option value="cwd">Working directory</option><option value="provider">Agent/provider</option><option value="primary">Primary + subagents</option></select></label>
               <label>Limit <input id="limit" type="number" value="100" min="1" max="1000" /></label>
             </fieldset>
-            <fieldset class="filter-group" id="usageFilterGroup">
-              <legend>Usage view</legend>
-              <label id="kindWrap">Signal type <select id="kind"><option value="tool">Tools</option><option value="skill">Skills</option></select></label>
-              <label id="bucketWrap">Time bucket <select id="bucket"><option value="day">Day</option><option value="week">Week</option></select></label>
-            </fieldset>
+
           </div>
         </details>
       </div>
     </section>
     <section id="searchPanel" class="results-panel"><div class="panel-heading"><h2>Evidence table</h2><p id="statusLine" class="muted" role="status">Ready.</p></div><div id="results"></div></section>
-    <section id="usagePanel" hidden><div class="panel-heading"><h2>Tool & Skill Usage</h2></div><div class="chart-wrap"><canvas id="chart"></canvas></div><div id="usageTable"></div></section>
+    <section id="usagePanel" hidden><div class="panel-heading"><h2>Tool &amp; Skill Usage</h2></div><div class="usage-toolbar"><label class="usage-control-label">Signal <select id="kind"><option value="tool">Tools</option><option value="skill">Skills</option></select></label><label class="usage-control-label">Bucket <select id="bucket"><option value="day">Day</option><option value="week">Week</option></select></label></div><p id="usageStatusLine" class="muted" role="status"></p><div class="chart-wrap"><canvas id="chart"></canvas></div><div id="chartLegend" class="chart-legend-html" aria-label="Chart legend" role="list"></div><div id="usageTable"></div></section>
     <section id="sessionPanel" hidden><div class="panel-heading"><h2>Session Details</h2></div><div id="sessionDetails"></div></section>
   </div>
 </main>
-<div id="sidebarResizeHandle" class="sidebar-resize-handle" role="separator" aria-label="Resize Pi sidebar" aria-orientation="vertical" aria-controls="piSidebar" aria-valuemin="340" aria-valuemax="640" aria-valuenow="460" tabindex="0" title="Drag to resize Pi sidebar"></div>
+<div id="sidebarResizeHandle" class="sidebar-resize-handle" role="separator" aria-label="Resize Pi sidebar" aria-orientation="vertical" aria-controls="piSidebar" aria-valuemin="260" aria-valuemax="640" aria-valuenow="320" tabindex="0" title="Drag to resize Pi sidebar"></div>
 <aside id="piSidebar" class="pi-sidebar pi-sidebar--header-reset" aria-label="Pi sidebar agent">
   <div class="chat-header">
     <div class="chat-title">

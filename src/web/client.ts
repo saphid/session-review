@@ -230,8 +230,8 @@ function setTab(tab: "search" | "usage" | "session"): void {
 }
 
 function syncPanels(): void {
-  searchTab.setAttribute("aria-pressed", String(activeTab === "search"));
-  usageTab.setAttribute("aria-pressed", String(activeTab === "usage"));
+  searchTab.setAttribute("aria-current", activeTab === "search" ? "page" : "false");
+  usageTab.setAttribute("aria-current", activeTab === "usage" ? "page" : "false");
   searchPanel.hidden = activeTab !== "search";
   usagePanel.hidden = activeTab !== "usage";
   sessionPanel.hidden = activeTab !== "session";
@@ -335,7 +335,12 @@ async function runUsage(started: number): Promise<void> {
   lastUsageResponse = data;
   currentSessionDetails = null;
   updatePiContextPreview();
-  usageChart = replaceChart(usageChart, element<HTMLCanvasElement>("chart"), usageChartConfig(data.timeline, data.summary.slice(0, 8).map((row) => row.name)));
+  const usageNames = data.summary.slice(0, 8).map((row) => row.name);
+  usageChart = replaceChart(usageChart, element<HTMLCanvasElement>("chart"), usageChartConfig(data.timeline, usageNames));
+  const legendEl = document.getElementById("chartLegend");
+  if (legendEl) legendEl.innerHTML = usageNames.map((name, i) => `<span class="legend-item" role="listitem" style="--legend-color:${palette(i)}">${escapeHtml(humanizeName(name))}</span>`).join("");
+  const usageStatusEl = document.getElementById("usageStatusLine");
+  if (usageStatusEl) usageStatusEl.textContent = `${data.summary.length} signal${data.summary.length !== 1 ? "s" : ""} \u00b7 ${data.timeline.length} data points \u00b7 ${elapsed(started)}`;
   drawUsageTable(data.summary, element<HTMLDivElement>("usageTable"));
   if (!data.summary.length) element<HTMLDivElement>("usageTable").replaceChildren(emptyStateNode("No usage signals found.", "Try a broader query, switch signal type, or ingest sessions that include tool and skill activity.", [{ label: "Clear filters", action: () => { clearFilters(); void run(); } }]));
   setStatus(`Usage query completed in ${elapsed(started)} with ${data.summary.length} names and ${data.timeline.length} graph points.`);
@@ -460,12 +465,14 @@ function detailDrawerNode(row: SearchResult, rows: SearchResult[] = lastSearchRo
   const tools = usageRows(row, "tool");
   const skills = usageRows(row, "skill");
   const links = linkedRows(rows, index, row);
-  drawer.innerHTML = `<div class="drawer-top"><div><p class="drawer-label">Parent session</p><div class="drawer-title">${escapeHtml(parentSessionTitle(row))}</div></div><div><p class="drawer-label">Relation</p><div class="drawer-meta-line"><span class="relation-pill relation-pill--${relation.kind}">${escapeHtml(relation.label)}</span><span>${escapeHtml(relation.subtext || projectDisplay(row))}</span></div></div><div><p class="drawer-label">Opened</p><div class="drawer-title">${escapeHtml(runtime.opened)}</div></div><button class="drawer-close" type="button" aria-label="Close session detail drawer">×</button></div><div class="drawer-columns"><div class="drawer-column"><div class="drawer-field"><p class="drawer-label">Session ID</p><div class="drawer-value">${escapeHtml(shortSessionId(row.sessionId))}</div></div><div class="drawer-field"><p class="drawer-label">Raw transcript path</p><div class="path-copy"><div class="path-box">${escapeHtml(row.path)}</div><button class="table-action copy-action" data-action="drawer-copy" type="button" aria-label="Copy raw transcript path">⧉</button></div></div><div class="drawer-field"><p class="drawer-label">Working directory</p><div class="drawer-value">${escapeHtml(row.cwd ?? "Unknown")}</div></div></div><div class="drawer-column"><p class="drawer-label">Top tools</p><div class="bar-list">${tools.map((entry) => barRow(entry)).join("")}</div></div><div class="drawer-column"><p class="drawer-label">Top skills</p><div class="skill-list">${skills.map((entry) => skillRow(entry)).join("")}</div></div><div class="drawer-column"><p class="drawer-label">Linked sessions</p><div class="linked-list">${links.map((entry) => linkedCard(entry)).join("")}</div></div></div>`;
+  drawer.innerHTML = `<div class="drawer-top"><div><p class="drawer-label">Parent session</p><div class="drawer-title">${escapeHtml(parentSessionTitle(row))}</div></div><div><p class="drawer-label">Relation</p><div class="drawer-meta-line"><span class="relation-pill relation-pill--${relation.kind}">${escapeHtml(relation.label)}</span><span>${escapeHtml(relation.subtext || projectDisplay(row))}</span></div></div><div><p class="drawer-label">Opened</p><div class="drawer-title">${escapeHtml(runtime.opened)}</div></div><button class="drawer-close" type="button" aria-label="Close session detail drawer">×</button></div><div class="drawer-columns"><div class="drawer-column"><div class="drawer-field"><p class="drawer-label">Session ID</p><div class="path-copy"><div class="path-box">${escapeHtml(shortSessionId(row.sessionId))}</div><button class="table-action copy-action" data-action="copy-sessionid" type="button" aria-label="Copy session ID">⧉</button></div></div><div class="drawer-field"><p class="drawer-label">Raw transcript path</p><div class="path-copy"><div class="path-box">${escapeHtml(row.path)}</div><button class="table-action copy-action" data-action="drawer-copy" type="button" aria-label="Copy raw transcript path">⧉</button></div></div><div class="drawer-field"><p class="drawer-label">Working directory</p><div class="path-copy"><div class="path-box">${escapeHtml(row.cwd ?? "Unknown")}</div>${row.cwd ? `<button class="table-action copy-action" data-action="copy-cwd" type="button" aria-label="Copy working directory">⧉</button>` : ""}</div></div></div><div class="drawer-column"><p class="drawer-label">Top tools</p><div class="bar-list">${tools.map((entry) => barRow(entry)).join("")}</div></div><div class="drawer-column"><p class="drawer-label">Top skills</p><div class="skill-list">${skills.map((entry) => skillRow(entry)).join("")}</div></div><div class="drawer-column"><p class="drawer-label">Linked sessions</p><div class="linked-list">${links.map((entry) => linkedCard(entry)).join("")}</div></div></div>`;
   drawer.querySelector<HTMLButtonElement>(".drawer-close")?.addEventListener("click", () => {
     drawer.remove();
     document.querySelectorAll(".result--featured,.selected-for-chat").forEach((node) => node.classList.remove("result--featured", "selected-for-chat"));
   });
   drawer.querySelector<HTMLButtonElement>('[data-action="drawer-copy"]')?.addEventListener("click", (event) => { event.stopPropagation(); void navigator.clipboard?.writeText(row.path); });
+  drawer.querySelector<HTMLButtonElement>('[data-action="copy-sessionid"]')?.addEventListener("click", (event) => { event.stopPropagation(); void navigator.clipboard?.writeText(shortSessionId(row.sessionId)); });
+  drawer.querySelector<HTMLButtonElement>('[data-action="copy-cwd"]')?.addEventListener("click", (event) => { event.stopPropagation(); void navigator.clipboard?.writeText(row.cwd ?? ""); });
   drawer.querySelectorAll<HTMLAnchorElement>(".linked-card").forEach((link) => {
     link.addEventListener("click", (event) => {
       event.preventDefault();
@@ -501,7 +508,7 @@ function linkedCard(row: SearchResult): string {
   const relation = relationDisplay(row);
   const runtime = runtimeDisplay(row);
   const href = `/session/${encodeURIComponent(row.sessionId)}`;
-  return `<a class="linked-card" href="${href}" aria-label="Open linked session ${escapeHtml(displayTitle(row))}"><div class="agent-avatar agent-avatar--${row.provider}">${escapeHtml(providerGlyph(row.provider))}</div><div><div class="linked-title">${escapeHtml(displayTitle(row))}</div><div class="linked-sub">${escapeHtml(runtime.date)}${runtime.time !== "unknown" ? `, ${escapeHtml(runtime.time)}` : ""}</div></div><span class="relation-pill relation-pill--${relation.kind}">${escapeHtml(relation.label)}</span></a>`;
+  return `<a class="linked-card" href="${href}" aria-label="Open linked session ${escapeHtml(displayTitle(row))}"><div class="agent-avatar agent-avatar--${row.provider}" aria-label="${escapeHtml(row.provider)} agent">${escapeHtml(providerGlyph(row.provider))}</div><div><div class="linked-title">${escapeHtml(displayTitle(row))}</div><div class="linked-sub">${escapeHtml(runtime.date)}${runtime.time !== "unknown" ? `, ${escapeHtml(runtime.time)}` : ""}</div></div><span class="relation-pill relation-pill--${relation.kind}">${escapeHtml(relation.label)}</span></a>`;
 }
 
 function parentSessionTitle(row: SearchResult): string {
@@ -903,11 +910,11 @@ function renderChatTabs(): void {
 function chatTabNode(chat: PiChat, index: number): HTMLElement {
   const tab = document.createElement("div");
   tab.className = `chat-tab${chat.id === piChatId ? " active" : ""}`;
-  tab.setAttribute("role", "tab");
-  tab.setAttribute("aria-selected", String(chat.id === piChatId));
   const button = document.createElement("button");
   button.type = "button";
   button.className = "chat-tab-button";
+  button.setAttribute("role", "tab");
+  button.setAttribute("aria-selected", String(chat.id === piChatId));
   button.textContent = chatTabLabel(chat, index);
   button.title = `Switch to Chat ${index + 1}`;
   button.addEventListener("click", () => switchPiChat(chat.id));
@@ -1689,7 +1696,7 @@ function usageChartConfig(points: UsagePoint[], names: string[]): ChartConfig {
   const lastActiveRev = [...allLabels].reverse().findIndex(hasData);
   // Pad trailing end by one bucket; fall back to full range when no data at all.
   const labels = firstActive >= 0 ? allLabels.slice(firstActive, allLabels.length - lastActiveRev + 1) : allLabels;
-  return { type: "bar", data: { labels, datasets: names.map((name, index) => ({ label: humanizeName(name), data: labels.map((label) => points.find((point) => point.bucket === label && point.name === name)?.count ?? 0), backgroundColor: palette(index) })) }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true, position: "bottom", labels: { color: "#9aa4b6", font: { size: 11 } } }, tooltip: { enabled: true } }, scales: { x: { ticks: { maxTicksLimit: 12, maxRotation: 45, minRotation: 20, color: "#8b94a8", font: { size: 11 } }, grid: { color: "rgba(132,148,180,.07)" } }, y: { type: "logarithmic", title: { display: true, text: "Uses", color: "#8b94a8", font: { size: 11 } }, ticks: { color: "#8b94a8", font: { size: 11 } }, grid: { color: "rgba(132,148,180,.07)" } } } } };
+  return { type: "bar", data: { labels, datasets: names.map((name, index) => ({ label: humanizeName(name), data: labels.map((label) => points.find((point) => point.bucket === label && point.name === name)?.count ?? 0), backgroundColor: palette(index) })) }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { enabled: true } }, scales: { x: { ticks: { maxTicksLimit: 12, maxRotation: 45, minRotation: 20, color: "#8b94a8", font: { size: 11 } }, grid: { color: "rgba(132,148,180,.07)" } }, y: { type: "logarithmic", title: { display: true, text: "Uses", color: "#8b94a8", font: { size: 11 } }, ticks: { color: "#8b94a8", font: { size: 11 } }, grid: { color: "rgba(132,148,180,.07)" } } } } };
 }
 
 function turnChartConfig(items: TranscriptItem[]): ChartConfig {
