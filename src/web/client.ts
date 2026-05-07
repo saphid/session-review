@@ -1572,7 +1572,13 @@ function humanizeName(name: string): string {
 }
 
 function usageChartConfig(points: UsagePoint[], names: string[]): ChartConfig {
-  const labels = [...new Set(points.map((point) => point.bucket))].sort();
+  const allLabels = [...new Set(points.map((point) => point.bucket))].sort();
+  // Trim leading and trailing empty buckets so the active data fills the chart area.
+  const hasData = (bucket: string): boolean => points.some((p) => p.bucket === bucket && p.count > 0);
+  const firstActive = allLabels.findIndex(hasData);
+  const lastActiveRev = [...allLabels].reverse().findIndex(hasData);
+  // Pad trailing end by one bucket; fall back to full range when no data at all.
+  const labels = firstActive >= 0 ? allLabels.slice(firstActive, allLabels.length - lastActiveRev + 1) : allLabels;
   return { type: "bar", data: { labels, datasets: names.map((name, index) => ({ label: humanizeName(name), data: labels.map((label) => points.find((point) => point.bucket === label && point.name === name)?.count ?? 0), backgroundColor: palette(index) })) }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true, position: "bottom", labels: { color: "#9aa4b6", font: { size: 11 } } }, tooltip: { enabled: true } }, scales: { x: { ticks: { maxTicksLimit: 12, maxRotation: 45, minRotation: 20, color: "#8b94a8", font: { size: 11 } }, grid: { color: "rgba(132,148,180,.07)" } }, y: { type: "logarithmic", title: { display: true, text: "Uses", color: "#8b94a8", font: { size: 11 } }, ticks: { color: "#8b94a8", font: { size: 11 } }, grid: { color: "rgba(132,148,180,.07)" } } } } };
 }
 
