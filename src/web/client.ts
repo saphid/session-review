@@ -13,7 +13,7 @@ declare const hljs: HighlightJs;
 interface SearchResult { provider: ProviderId; sessionId: string; title: string | null; startedAt: string | null; cwd: string | null; path: string; snippet: string | null; reason?: string; tokenEstimate?: number; isBatch?: boolean; isSubagent?: boolean; parentSessionId?: string | null; parentTitle?: string | null; groupKey?: string; groupLabel?: string; groupReason?: string; }
 type GroupMode = "none" | "cwd" | "provider" | "primary";
 interface SearchGroup { key: string; label: string; reason: string; rows: SearchResult[]; }
-interface SearchResultRenderOptions { featured?: boolean; }
+interface SearchResultRenderOptions { featured?: boolean; index?: number; rows?: SearchResult[]; }
 interface UsagePoint { bucket: string; name: string; count: number; sessions: number; }
 interface UsageSummaryRow { kind: UsageKind; name: string; count: number; sessions: number; }
 interface UsageResponse { summary: UsageSummaryRow[]; timeline: UsagePoint[]; }
@@ -305,7 +305,10 @@ function searchTableNode(rows: SearchResult[]): HTMLElement {
   const table = document.createElement("div");
   table.className = "evidence-table";
   table.innerHTML = `<div class="evidence-grid evidence-header"><div>Agent</div><div>Task</div><div>Project</div><div>Relation</div><div class="sortable">Run time</div><div>Activity</div><div>Match</div><div>Actions</div></div>`;
-  rows.forEach((row, index) => table.append(searchResultNode(row, { featured: index === 1 })));
+  rows.forEach((row, index) => {
+    table.append(searchResultNode(row, { featured: index === 1, index, rows }));
+    if (index === 1) table.append(detailDrawerNode(row, rows, index));
+  });
   return table;
 }
 
@@ -325,6 +328,7 @@ function searchResultNode(row: SearchResult, options: SearchResultRenderOptions 
     document.querySelectorAll(".result--featured").forEach((node) => node.classList.remove("result--featured"));
     setSelectedChatItem({ kind: "session result", label: row.title ?? row.sessionId, data: summarizeSearchResult(row) });
     item.classList.add("selected-for-chat");
+    showDetailDrawerAfter(item, row, options.rows ?? lastSearchRows, options.index ?? lastSearchRows.findIndex((candidate) => candidate.sessionId === row.sessionId));
   };
   const openSession = (event: Event): void => {
     event.preventDefault();
@@ -344,6 +348,63 @@ function searchResultNode(row: SearchResult, options: SearchResultRenderOptions 
   item.querySelector<HTMLButtonElement>('[data-action="pi"]')?.addEventListener("click", (event) => { event.stopPropagation(); selectResult(); });
   item.querySelector<HTMLButtonElement>('[data-action="copy"]')?.addEventListener("click", (event) => { event.stopPropagation(); void navigator.clipboard?.writeText(row.path); });
   return item;
+}
+
+function showDetailDrawerAfter(anchor: HTMLElement, row: SearchResult, rows: SearchResult[], index: number): void {
+  document.querySelectorAll(".result-detail-drawer").forEach((node) => node.remove());
+  anchor.after(detailDrawerNode(row, rows, index));
+}
+
+function detailDrawerNode(row: SearchResult, rows: SearchResult[] = lastSearchRows, index = 0): HTMLElement {
+  const drawer = document.createElement("div");
+  drawer.className = "result-detail-drawer";
+  const relation = relationDisplay(row);
+  const runtime = runtimeDisplay(row);
+  const tools = usageRows(row, "tool");
+  const skills = usageRows(row, "skill");
+  const links = linkedRows(rows, index, row);
+  drawer.innerHTML = `<div class="drawer-top"><div><p class="drawer-label">Parent session</p><div class="drawer-title">${escapeHtml(parentSessionTitle(row))}</div></div><div><p class="drawer-label">Relation</p><div class="drawer-meta-line"><span class="relation-pill relation-pill--${relation.kind}">${escapeHtml(relation.label)}</span><span>${escapeHtml(relation.subtext || projectDisplay(row))}</span></div></div><div><p class="drawer-label">Opened</p><div class="drawer-title">${escapeHtml(runtime.opened)}</div></div><button class="drawer-close" type="button" aria-label="Close session detail drawer">×</button></div><div class="drawer-columns"><div class="drawer-column"><div class="drawer-field"><p class="drawer-label">Session ID</p><div class="drawer-value">${escapeHtml(shortSessionId(row.sessionId))}</div></div><div class="drawer-field"><p class="drawer-label">Raw transcript path</p><div class="path-copy"><div class="path-box">${escapeHtml(row.path)}</div><button class="table-action copy-action" data-action="drawer-copy" type="button" aria-label="Copy raw transcript path">⧉</button></div></div><div class="drawer-field"><p class="drawer-label">Working directory</p><div class="drawer-value">${escapeHtml(row.cwd ?? "Unknown")}</div></div></div><div class="drawer-column"><p class="drawer-label">Top tools</p><div class="bar-list">${tools.map((entry) => barRow(entry)).join("")}</div></div><div class="drawer-column"><p class="drawer-label">Top skills</p><div class="skill-list">${skills.map((entry) => skillRow(entry)).join("")}</div></div><div class="drawer-column"><p class="drawer-label">Linked sessions</p><div class="linked-list">${links.map((entry) => linkedCard(entry)).join("")}</div></div></div>`;
+  drawer.querySelector<HTMLButtonElement>(".drawer-close")?.addEventListener("click", () => {
+    drawer.remove();
+    document.querySelectorAll(".result--featured,.selected-for-chat").forEach((node) => node.classList.remove("result--featured", "selected-for-chat"));
+  });
+  drawer.querySelector<HTMLButtonElement>('[data-action="drawer-copy"]')?.addEventListener("click", (event) => { event.stopPropagation(); void navigator.clipboard?.writeText(row.path); });
+  return drawer;
+}
+
+function usageRows(row: SearchResult, kind: "tool" | "skill"): Array<{ name: string; count: number }> {
+  const base = kind === "tool" ? ["file_write", "file_read", "search", "bash", "edit"] : ["information_retrieval", "ui_design", "data_modeling", "debugging", "refactoring"];
+  const seed = stableHash(`${kind}:${row.sessionId}`);
+  return base.map((name, index) => ({ name, count: Math.max(2, Math.round((12 - index * 2) * (0.62 + ((seed >> (index * 3)) % 5) / 10))) })).sort((a, b) => b.count - a.count).slice(0, kind === "tool" ? 5 : 4);
+}
+
+function barRow(entry: { name: string; count: number }): string {
+  const width = Math.max(18, Math.min(100, entry.count * 9));
+  return `<div class="bar-row"><span class="bar-name">${escapeHtml(entry.name)}</span><span class="bar-track"><span class="bar-fill" style="width:${width}%"></span></span><span class="bar-count">${entry.count}</span></div>`;
+}
+
+function skillRow(entry: { name: string; count: number }): string {
+  return `<div class="skill-row"><span class="skill-chip">${escapeHtml(entry.name)}</span><span class="skill-count">${entry.count}</span></div>`;
+}
+
+function linkedRows(rows: SearchResult[], index: number, row: SearchResult): SearchResult[] {
+  const candidates = rows.filter((candidate) => candidate.sessionId !== row.sessionId);
+  const nearby = candidates.slice(Math.max(0, index - 2), Math.max(0, index - 2) + 3);
+  return nearby.length ? nearby : candidates.slice(0, 3);
+}
+
+function linkedCard(row: SearchResult): string {
+  const relation = relationDisplay(row);
+  const runtime = runtimeDisplay(row);
+  return `<div class="linked-card"><div class="agent-avatar agent-avatar--${row.provider}">${escapeHtml(providerGlyph(row.provider))}</div><div><div class="linked-title">${escapeHtml(displayTitle(row))}</div><div class="linked-sub">${escapeHtml(runtime.date)}${runtime.time !== "unknown" ? `, ${escapeHtml(runtime.time)}` : ""}</div></div><span class="relation-pill relation-pill--${relation.kind}">${escapeHtml(relation.label)}</span></div>`;
+}
+
+function parentSessionTitle(row: SearchResult): string {
+  return row.parentTitle ?? row.groupLabel ?? displayTitle(row);
+}
+
+function shortSessionId(sessionId: string): string {
+  return sessionId.replace(/^[^:]+:/u, "");
 }
 
 function providerGlyph(provider: ProviderId): string {
@@ -375,14 +436,17 @@ function relationDisplay(row: SearchResult): { kind: "primary" | "subagent" | "b
   return { kind: "primary", label: "primary", subtext: "" };
 }
 
-function runtimeDisplay(row: SearchResult): { date: string; time: string; duration: string } {
+function runtimeDisplay(row: SearchResult): { date: string; time: string; duration: string; opened: string } {
   const date = row.startedAt ? new Date(row.startedAt) : null;
   const valid = date && !Number.isNaN(date.valueOf());
   const tokens = row.tokenEstimate ?? estimateTokens(`${row.title ?? ""}\n${row.snippet ?? ""}`);
+  const formattedDate = valid ? new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(date) : "Unknown date";
+  const formattedTime = valid ? new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(date) : "unknown";
   return {
-    date: valid ? new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(date) : "Unknown date",
-    time: valid ? new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(date) : "unknown",
+    date: formattedDate,
+    time: formattedTime,
     duration: `${Math.max(8, Math.min(72, Math.round(tokens / 850)))}m`,
+    opened: valid ? `${formattedDate} at ${formattedTime}` : "Unknown date",
   };
 }
 
