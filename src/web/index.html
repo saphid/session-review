@@ -177,62 +177,144 @@
       @media (max-width: 1200px) { .app-shell { grid-template-columns: 1fr; gap:10px; } .sidebar-resize-handle { display:none; } .pi-sidebar { position: static; width: auto; height: auto; max-height: none; margin-inline-end: 0; border-radius:0; border: 1px solid rgba(124,156,255,.22); box-shadow: var(--glow); } }
       @media (max-width: 900px) { .filter-primary, .filter-groups { grid-template-columns: 1fr; } }
       @media (max-width: 640px) { header { position:static; display:grid; grid-template-columns:1fr auto; align-items:start; gap:6px 8px; padding:10px 12px; } header p { grid-column:1 / -1; max-width:34ch; margin-top:0; } header::after { align-self:start; } .app-shell { padding:8px 10px; } button, input, select { min-height:34px; } .turn-card { padding:10px; } .result-head { display:grid; } }
+
+      /* Cockpit shell foundation */
+      :root { --sidebar-width:216px; --chrome-border:rgba(132,148,180,.18); --chrome-border-strong:rgba(132,148,180,.28); --chrome-panel:#11161d; --chrome-panel-raised:#151a22; --chrome-panel-soft:#0d1218; --chrome-blue:#6b8dff; }
+      body { min-height:100vh; background: radial-gradient(circle at 68% -16%, rgba(83,114,155,.16), transparent 34%), linear-gradient(180deg,#0a0d10 0%,#0d1116 48%,#090c10 100%); color:#f2f5fb; overflow-x:hidden; }
+      [hidden] { display:none !important; }
+      header { display:none; }
+      .app-shell { display:grid; grid-template-columns:var(--sidebar-width) minmax(0,1fr); gap:0; min-height:100vh; padding:0; max-width:none; align-items:stretch; }
+      .left-sidebar { position:sticky; top:0; height:100vh; display:grid; grid-template-rows:auto 1fr auto; gap:18px; padding:14px 12px; border-right:1px solid var(--chrome-border-strong); background:linear-gradient(180deg,rgba(13,17,22,.98),rgba(9,12,16,.98)); box-shadow:inset -1px 0 rgba(255,255,255,.03); z-index:10; }
+      .brand { display:flex; align-items:center; gap:12px; min-height:36px; }
+      .brand-mark { width:36px; height:36px; display:grid; place-items:center; border:1px solid rgba(113,144,255,.72); border-radius:6px; color:#f8fbff; background:linear-gradient(180deg,#111827,#070a0f); box-shadow:0 0 0 1px rgba(255,255,255,.04), 0 0 26px rgba(78,111,255,.16); font:700 18px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+      .brand-name { font-size:18px; line-height:1; font-weight:800; letter-spacing:-.02em; }
+      .side-nav { display:grid; align-content:start; gap:4px; margin-top:6px; }
+      .nav-item { width:100%; display:grid; grid-template-columns:24px minmax(0,1fr) auto; align-items:center; gap:10px; min-height:44px; padding:0 12px; border:1px solid transparent; border-radius:5px; color:#c7cedb; background:transparent; box-shadow:none; font-weight:500; text-align:left; }
+      .nav-item:hover { transform:none; filter:none; color:#f3f6ff; background:rgba(255,255,255,.035); }
+      .nav-item:disabled { opacity:1; cursor:default; }
+      .nav-item[aria-pressed="true"], .nav-item.active { color:#8fb0ff; background:linear-gradient(90deg,rgba(86,128,255,.18),rgba(86,128,255,.05)); border-color:rgba(91,130,255,.18); box-shadow:inset 3px 0 #5a87ff; }
+      .nav-icon { width:18px; display:inline-grid; place-items:center; color:currentColor; font-size:17px; }
+      .nav-label { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .nav-count { min-width:38px; justify-self:end; padding:3px 7px; border-radius:5px; background:rgba(255,255,255,.09); color:#dce3f1; font:600 12px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; text-align:center; }
+      .sidebar-bottom { display:grid; gap:8px; }
+      .admin-card { display:grid; grid-template-columns:24px minmax(0,1fr) auto; align-items:center; gap:9px; min-height:38px; padding:6px 10px; border:1px solid var(--chrome-border); border-radius:5px; background:rgba(255,255,255,.035); color:#d7deeb; }
+      .admin-avatar { width:24px; height:24px; display:grid; place-items:center; border-radius:50%; background:linear-gradient(180deg,#5678e8,#253a8d); color:white; font-size:12px; font-weight:800; }
+      .main-cockpit { grid-column:2; display:grid; grid-template-rows:auto minmax(0,1fr); gap:10px; min-width:0; padding:12px; background:radial-gradient(circle at 50% 0%, rgba(255,255,255,.035), transparent 30%); }
+      .page-toolbar { display:flex; justify-content:space-between; align-items:center; gap:14px; min-height:42px; }
+      .page-title { display:flex; align-items:baseline; gap:8px; min-width:0; }
+      .page-title h1 { margin:0; color:#f6f8fd; font-size:22px; letter-spacing:-.035em; }
+      .page-kicker { color:#818897; font-size:14px; white-space:nowrap; }
+      .top-controls { display:flex; align-items:center; gap:8px; margin-left:auto; min-width:0; }
+      .visually-hidden { position:absolute !important; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0; }
+      .top-control, .filter-toggle, .top-search { min-height:36px; border:1px solid var(--chrome-border-strong); border-radius:5px; background:rgba(9,13,18,.72); color:#f0f3fa; box-shadow:none; }
+      .filter-toggle { display:inline-flex; align-items:center; gap:8px; padding:0 16px; font-weight:650; }
+      .filter-toggle:hover, .top-control:hover { transform:none; filter:brightness(1.08); }
+      .top-control { min-width:150px; padding:0 38px 0 14px; }
+      .top-search { width:min(320px,30vw); display:grid; grid-template-columns:18px minmax(0,1fr) auto; align-items:center; gap:9px; padding:0 8px 0 12px; }
+      .top-search input { width:100%; min-height:0; padding:0; border:0; background:transparent; box-shadow:none; }
+      .search-key { min-width:23px; padding:2px 6px; border:1px solid rgba(132,148,180,.22); border-radius:4px; color:#8a92a2; font:12px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; text-align:center; }
+      .content-stack { display:grid; gap:10px; min-width:0; }
+      .tabs { display:none; }
+      section, .pi-sidebar { background:linear-gradient(180deg,rgba(18,23,30,.96),rgba(13,18,24,.96)); border-color:var(--chrome-border); border-radius:5px; box-shadow:0 14px 30px rgba(0,0,0,.18); }
+      .filter-panel { padding:0; background:transparent; border:0; box-shadow:none; }
+      .filters { border:1px solid var(--chrome-border); border-radius:5px; padding:10px; background:rgba(14,19,25,.9); }
+      .filter-primary { grid-template-columns:minmax(140px,1fr) auto auto; }
+      .shortcut-hint { margin:8px 0 0; color:#7f8898; }
+      .advanced-filters { margin-top:8px; }
+      .advanced-filters:not([open]) .filter-groups { display:none; }
+      .results-panel, #usagePanel, #sessionPanel { padding:0; overflow:hidden; }
+      .panel-heading { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:12px 14px; border-bottom:1px solid var(--chrome-border); }
+      .panel-heading h2 { margin:0; color:#c9d0dc; font-size:12px; letter-spacing:.06em; text-transform:uppercase; }
+      #statusLine { margin:0; color:#a2abba; font-size:12px; }
+      #results { display:grid; }
+      .result { padding:14px 18px; border-top:0; border-bottom:1px solid rgba(132,148,180,.15); background:linear-gradient(90deg,rgba(255,255,255,.018),transparent); }
+      .result:hover, .selected-for-chat { background:rgba(86,128,255,.08); border-color:rgba(86,128,255,.42); outline:1px solid rgba(86,128,255,.42); outline-offset:-1px; }
+      .result-head strong { font-size:15px; }
+      .result p { margin:8px 0 0; color:#b7bfce; }
+      .badge { border-radius:999px; }
+      .sidebar-resize-handle, .pi-sidebar { display:none; }
+      body[data-active-tab="session"] .app-shell { grid-template-columns:var(--sidebar-width) minmax(0,1fr) 14px var(--pi-sidebar-width,460px); }
+      body[data-active-tab="session"] .sidebar-resize-handle { display:block; grid-column:3; }
+      body[data-active-tab="session"] .pi-sidebar { display:grid; grid-column:4; }
+      @media (max-width: 1100px) { .app-shell, body[data-active-tab="session"] .app-shell { grid-template-columns:1fr; } .left-sidebar { position:relative; height:auto; grid-template-rows:auto auto auto; } .main-cockpit { grid-column:1; } .side-nav { grid-template-columns:repeat(2,minmax(0,1fr)); } body[data-active-tab="session"] .sidebar-resize-handle, body[data-active-tab="session"] .pi-sidebar { display:none; } .top-controls { flex-wrap:wrap; justify-content:flex-end; } .top-search { width:min(100%,360px); } }
+      @media (max-width: 720px) { .page-toolbar { align-items:flex-start; flex-direction:column; } .top-controls { width:100%; justify-content:stretch; } .filter-toggle, .top-control, .top-search { flex:1 1 100%; width:100%; } .filter-primary { grid-template-columns:1fr; } }
     </style>
   </head>
   <body>
-    <header>
-      <h1>Session Review</h1>
-      <p class="muted">Search sessions and inspect tool/skill usage over time. Batch runs can be included, excluded, or isolated.</p>
-    </header>
 <div id="appShell" class="app-shell">
-<main>
-  <section>
-    <div class="tabs">
-      <button id="searchTab" aria-pressed="true">Sessions</button>
-      <button id="usageTab" aria-pressed="false">Tools & Skills</button>
+<aside class="left-sidebar" aria-label="Primary navigation">
+  <div class="brand" aria-label="Session Review">
+    <div class="brand-mark">›_</div>
+    <div class="brand-name">Session Review</div>
+  </div>
+  <nav class="side-nav">
+    <button class="nav-item" type="button" aria-pressed="false" disabled><span class="nav-icon">⌂</span><span class="nav-label">Overview</span></button>
+    <button id="searchTab" class="nav-item" type="button" aria-pressed="true"><span class="nav-icon">▣</span><span class="nav-label">Sessions</span><span id="sessionsNavCount" class="nav-count">—</span></button>
+    <button class="nav-item" type="button" aria-pressed="false" disabled><span class="nav-icon">⌗</span><span class="nav-label">Evidence</span></button>
+    <button class="nav-item" type="button" aria-pressed="false" disabled><span class="nav-icon">⌘</span><span class="nav-label">Agents</span></button>
+    <button class="nav-item" type="button" aria-pressed="false" disabled><span class="nav-icon">□</span><span class="nav-label">Projects</span></button>
+    <button class="nav-item" type="button" aria-pressed="false" disabled><span class="nav-icon">∞</span><span class="nav-label">Relations</span></button>
+    <button class="nav-item" type="button" aria-pressed="false" disabled><span class="nav-icon">☷</span><span class="nav-label">Batches</span></button>
+    <button class="nav-item" type="button" aria-pressed="false" disabled><span class="nav-icon">✧</span><span class="nav-label">Skills</span></button>
+    <button id="usageTab" class="nav-item" type="button" aria-pressed="false"><span class="nav-icon">⌘</span><span class="nav-label">Tools</span></button>
+    <button class="nav-item" type="button" aria-pressed="false" disabled><span class="nav-icon">⚙</span><span class="nav-label">Settings</span></button>
+  </nav>
+  <div class="sidebar-bottom">
+    <div class="admin-card"><span class="admin-avatar">A</span><span>admin</span><span aria-hidden="true">⌄</span></div>
+  </div>
+</aside>
+<main class="main-cockpit">
+  <div class="page-toolbar">
+    <div class="page-title"><h1 id="pageTitle">Sessions</h1><span id="pageKicker" class="page-kicker">Evidence table</span></div>
+    <div class="top-controls" aria-label="Session controls">
+      <button id="filtersToggle" class="filter-toggle" type="button" aria-controls="advancedFilters" aria-expanded="false">⌯ Filters</button>
+      <label class="visually-hidden" for="projectSelect">Project</label>
+      <select id="projectSelect" class="top-control"><option value="">All projects</option></select>
+      <label class="top-search"><span aria-hidden="true">⌕</span><input id="query" placeholder="Search sessions…" /><span class="search-key">/</span></label>
     </div>
-  </section>
-  <section>
-    <div class="filters">
-      <div class="filter-primary">
-        <label>Search <input id="query" placeholder="sqlite, auth, file path…" /></label>
-        <label>Provider <select id="provider"><option value="">All agents</option></select></label>
-        <button id="run">Run query</button>
-        <button id="clearFilters" type="button">Clear filters</button>
-      </div>
-      <p class="shortcut-hint">Shortcuts: / focuses search, 1 opens Sessions, 2 opens Tools & Skills, Escape clears selected Pi context.</p>
-      <details class="advanced-filters">
-        <summary>Advanced filters</summary>
-        <div class="filter-groups">
-          <fieldset class="filter-group">
-            <legend>Source</legend>
-            <label>Working directory <input id="cwd" placeholder="/Personal/Projects" /></label>
-            <label>Path contains <input id="pathFilter" placeholder="session.jsonl" /></label>
-          </fieldset>
-          <fieldset class="filter-group">
-            <legend>Time</legend>
-            <label>Start date <input id="startDate" type="date" /></label>
-            <label>End date <input id="endDate" type="date" /></label>
-          </fieldset>
-          <fieldset class="filter-group">
-            <legend>Results</legend>
-            <label>Batch runs <select id="batchMode"><option value="include">Include</option><option value="exclude">Exclude</option><option value="only">Only batch</option></select></label>
-            <label>Group by <select id="groupBy"><option value="none">None</option><option value="cwd">Working directory</option><option value="provider">Agent/provider</option><option value="primary">Primary + subagents</option></select></label>
-            <label>Limit <input id="limit" type="number" value="100" min="1" max="1000" /></label>
-          </fieldset>
-          <fieldset class="filter-group" id="usageFilterGroup">
-            <legend>Usage view</legend>
-            <label id="kindWrap">Signal type <select id="kind"><option value="tool">Tools</option><option value="skill">Skills</option></select></label>
-            <label id="bucketWrap">Time bucket <select id="bucket"><option value="day">Day</option><option value="week">Week</option></select></label>
-          </fieldset>
+  </div>
+  <div class="content-stack">
+    <section class="filter-panel">
+      <div class="tabs" aria-hidden="true"></div>
+      <div class="filters" id="advancedFilters" hidden>
+        <div class="filter-primary">
+          <label>Agent <select id="provider"><option value="">All agents</option></select></label>
+          <button id="run">Run query</button>
+          <button id="clearFilters" type="button">Clear filters</button>
         </div>
-      </details>
-    </div>
-    <p id="statusLine" class="muted" role="status">Ready.</p>
-  </section>
-  <section id="searchPanel"><h2>Sessions</h2><div id="results"></div></section>
-  <section id="usagePanel" hidden><h2>Tool & Skill Usage</h2><div class="legend"><span style="--c:#66d9ef">Uses</span><span style="--c:#fbbf24">Clicked/highlighted series</span></div><div class="chart-wrap"><canvas id="chart"></canvas></div><div id="usageTable"></div></section>
-  <section id="sessionPanel" hidden><h2>Session Details</h2><div id="sessionDetails"></div></section>
+        <p class="shortcut-hint">Shortcuts: / focuses search, 1 opens Sessions, 2 opens Tools & Skills, Escape clears selected Pi context.</p>
+        <details class="advanced-filters">
+          <summary>Advanced filters</summary>
+          <div class="filter-groups">
+            <fieldset class="filter-group">
+              <legend>Source</legend>
+              <label>Working directory <input id="cwd" placeholder="/Personal/Projects" /></label>
+              <label>Path contains <input id="pathFilter" placeholder="session.jsonl" /></label>
+            </fieldset>
+            <fieldset class="filter-group">
+              <legend>Time</legend>
+              <label>Start date <input id="startDate" type="date" /></label>
+              <label>End date <input id="endDate" type="date" /></label>
+            </fieldset>
+            <fieldset class="filter-group">
+              <legend>Results</legend>
+              <label>Batch runs <select id="batchMode"><option value="include">Include</option><option value="exclude">Exclude</option><option value="only">Only batch</option></select></label>
+              <label>Group by <select id="groupBy"><option value="none">None</option><option value="cwd">Working directory</option><option value="provider">Agent/provider</option><option value="primary">Primary + subagents</option></select></label>
+              <label>Limit <input id="limit" type="number" value="100" min="1" max="1000" /></label>
+            </fieldset>
+            <fieldset class="filter-group" id="usageFilterGroup">
+              <legend>Usage view</legend>
+              <label id="kindWrap">Signal type <select id="kind"><option value="tool">Tools</option><option value="skill">Skills</option></select></label>
+              <label id="bucketWrap">Time bucket <select id="bucket"><option value="day">Day</option><option value="week">Week</option></select></label>
+            </fieldset>
+          </div>
+        </details>
+      </div>
+    </section>
+    <section id="searchPanel" class="results-panel"><div class="panel-heading"><h2>Evidence table</h2><p id="statusLine" class="muted" role="status">Ready.</p></div><div id="results"></div></section>
+    <section id="usagePanel" hidden><div class="panel-heading"><h2>Tool & Skill Usage</h2></div><div class="legend"><span style="--c:#66d9ef">Uses</span><span style="--c:#fbbf24">Clicked/highlighted series</span></div><div class="chart-wrap"><canvas id="chart"></canvas></div><div id="usageTable"></div></section>
+    <section id="sessionPanel" hidden><div class="panel-heading"><h2>Session Details</h2></div><div id="sessionDetails"></div></section>
+  </div>
 </main>
 <div id="sidebarResizeHandle" class="sidebar-resize-handle" role="separator" aria-label="Resize Pi sidebar" aria-orientation="vertical" aria-controls="piSidebar" aria-valuemin="340" aria-valuemax="640" aria-valuenow="460" tabindex="0" title="Drag to resize Pi sidebar"></div>
 <aside id="piSidebar" class="pi-sidebar pi-sidebar--header-reset" aria-label="Pi sidebar agent">

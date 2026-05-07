@@ -55,6 +55,12 @@ const piNewChatButton = element<HTMLButtonElement>("piNewChat");
 const chatTabs = element<HTMLDivElement>("chatTabs");
 const clearSelectedChatItemButton = element<HTMLButtonElement>("clearSelectedChatItem");
 const clearFiltersButton = element<HTMLButtonElement>("clearFilters");
+const filtersToggle = element<HTMLButtonElement>("filtersToggle");
+const advancedFiltersPanel = element<HTMLDivElement>("advancedFilters");
+const projectSelect = element<HTMLSelectElement>("projectSelect");
+const pageTitle = element<HTMLHeadingElement>("pageTitle");
+const pageKicker = element<HTMLSpanElement>("pageKicker");
+const sessionsNavCount = element<HTMLSpanElement>("sessionsNavCount");
 const sidebarResizeHandle = element<HTMLDivElement>("sidebarResizeHandle");
 const piSidebar = element<HTMLElement>("piSidebar");
 
@@ -67,6 +73,12 @@ piSendButton.addEventListener("click", () => void sendPiChat());
 piNewChatButton.addEventListener("click", () => createPiChatTab());
 clearSelectedChatItemButton.addEventListener("click", () => setSelectedChatItem(null));
 clearFiltersButton.addEventListener("click", () => { clearFilters(); void run(); });
+filtersToggle.addEventListener("click", () => toggleFiltersPanel());
+projectSelect.addEventListener("change", () => {
+  element<HTMLInputElement>("cwd").value = projectSelect.value;
+  void run();
+});
+element<HTMLInputElement>("cwd").addEventListener("input", syncProjectSelectFromCwd);
 element<HTMLInputElement>("query").addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
     event.preventDefault();
@@ -167,6 +179,7 @@ async function init(): Promise<void> {
   try {
     const filters = await getJson<{ providers: string[]; cwd: string[] }>("/api/filters");
     for (const item of filters.providers) element<HTMLSelectElement>("provider").append(new Option(item, item));
+    for (const item of filters.cwd.slice(0, 80)) projectSelect.append(new Option(projectLabel(item), item));
     await run();
   } catch (error) {
     renderActiveError("Could not load local session index.", error, "Check that the Session Review server is running, then retry.");
@@ -189,12 +202,31 @@ function syncPanels(): void {
   usagePanel.hidden = activeTab !== "usage";
   sessionPanel.hidden = activeTab !== "session";
   document.body.dataset.activeTab = activeTab;
+  pageTitle.textContent = activeTab === "usage" ? "Tools" : activeTab === "session" ? "Session Details" : "Sessions";
+  pageKicker.textContent = activeTab === "usage" ? "Usage signals" : activeTab === "session" ? "Transcript evidence" : "Evidence table";
   for (const panel of [searchPanel, usagePanel, sessionPanel]) panel.tabIndex = panel.hidden ? -1 : 0;
 }
 
 function focusActivePanel(): void {
   const panel = activeTab === "search" ? searchPanel : activeTab === "usage" ? usagePanel : sessionPanel;
   requestAnimationFrame(() => panel.focus({ preventScroll: true }));
+}
+
+function toggleFiltersPanel(force?: boolean): void {
+  const open = force ?? advancedFiltersPanel.hidden;
+  advancedFiltersPanel.hidden = !open;
+  filtersToggle.setAttribute("aria-expanded", String(open));
+}
+
+function syncProjectSelectFromCwd(): void {
+  const cwd = value("cwd");
+  if ([...projectSelect.options].some((option) => option.value === cwd)) projectSelect.value = cwd;
+  else projectSelect.value = "";
+}
+
+function projectLabel(cwd: string): string {
+  const parts = cwd.split("/").filter(Boolean);
+  return parts.at(-1) ?? cwd;
 }
 
 async function run(): Promise<void> {
@@ -219,6 +251,7 @@ async function runSearch(started: number): Promise<void> {
   updatePiContextPreview();
   const target = element<HTMLDivElement>("results");
   target.replaceChildren();
+  sessionsNavCount.textContent = formatNumber(rows.length);
   if (!rows.length) {
     if (hasSearchConstraints()) {
       target.replaceChildren(emptyStateNode("No sessions match these filters.", "Clear filters or broaden the query, then run the search again.", [{ label: "Clear filters", action: () => { clearFilters(); void run(); } }]));
@@ -919,6 +952,7 @@ function clearFilters(): void {
   element<HTMLSelectElement>("bucket").value = "day";
   element<HTMLSelectElement>("batchMode").value = "include";
   element<HTMLInputElement>("limit").value = "100";
+  projectSelect.value = "";
   setSelectedChatItem(null);
   setStatus("Filters cleared. Run the query to reload all sessions.");
 }
