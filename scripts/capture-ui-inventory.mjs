@@ -42,13 +42,10 @@ async function waitForSession() {
 async function capture(name, description, p = page) {
   const screenshotPath = new URL(`${name}.png`, outDir).pathname;
   const domPath = new URL(`${name}.dom.html`, outDir).pathname;
-  const axPath = new URL(`${name}.ax.json`, outDir).pathname;
   await p.screenshot({ path: screenshotPath, fullPage: false });
   const dom = await p.evaluate(() => document.body.outerHTML);
   await writeFile(domPath, dom, "utf8");
-  const ax = await p.accessibility.snapshot({ interestingOnly: false });
-  await writeFile(axPath, `${JSON.stringify(ax, null, 2)}\n`, "utf8");
-  screens.push({ name, description, screenshotPath, domPath, axPath });
+  screens.push({ name, description, screenshotPath, domPath });
 }
 
 await page.goto(`${baseUrl}/?limit=25`);
