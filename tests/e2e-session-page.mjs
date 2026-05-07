@@ -28,9 +28,18 @@ await page.locator(".evidence-table").waitFor({ timeout: 15_000 });
 await page.screenshot({ path: new URL("search-e2e.png", outDir).pathname, fullPage: true });
 
 await page.goto(`${baseUrl}/session/${encodeURIComponent(sessionId)}`);
-await page.getByRole("heading", { name: "Transcript" }).waitFor({ timeout: 15_000 });
+await page.waitForFunction(
+  () => document.querySelector("#statusLine")?.textContent?.includes("Session loaded"),
+  null,
+  { timeout: 15_000 },
+);
+await page.locator("#sessionDetails .sd-panel").waitFor({ timeout: 10_000 });
 await page.screenshot({ path: new URL("session-top-e2e.png", outDir).pathname, fullPage: false });
-await page.getByRole("heading", { name: "Transcript" }).scrollIntoViewIfNeeded();
+// Scroll to first turn card — the Transcript heading no longer exists after cockpit restyle
+const firstTurnCard = page.locator("#transcript .turn-card").first();
+await firstTurnCard.waitFor({ timeout: 10_000 });
+await firstTurnCard.scrollIntoViewIfNeeded();
+await page.waitForTimeout(200);
 await page.screenshot({ path: new URL("session-transcript-e2e.png", outDir).pathname, fullPage: false });
 
 await page.getByText("Turn analytics and linked sessions").click();
