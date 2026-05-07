@@ -359,7 +359,8 @@ function renderSearchPage(): void {
 function searchTableNode(rows: SearchResult[], page: number, pageSize: number): HTMLElement {
   const table = document.createElement("div");
   table.className = "evidence-table";
-  table.innerHTML = `<div class="evidence-grid evidence-header"><div>Agent</div><div>Task</div><div>Project</div><div>Relation</div><div class="sortable">Run time</div><div>Activity</div><div>Match</div><div>Actions</div></div>`;
+  const hasQuery = Boolean(value("query"));
+  table.innerHTML = `<div class="evidence-grid evidence-header"><div>Agent</div><div>Task</div><div>Project</div><div>Relation</div><div${hasQuery ? "" : ' class="sortable"'}>Run time</div><div>Activity</div><div${hasQuery ? ' class="sortable"' : ""}>Match</div><div>Actions</div></div>`;
   const body = document.createElement("div");
   body.className = "evidence-body";
   const startIndex = (page - 1) * pageSize;
@@ -418,15 +419,13 @@ function tableFooterNode(totalRows: number, page: number, pageSize: number): HTM
 function searchResultNode(row: SearchResult, options: SearchResultRenderOptions = {}): HTMLElement {
   const item = document.createElement("div");
   item.className = `result evidence-grid selectable-chat-item${options.featured ? " result--featured" : ""}`;
-  item.tabIndex = 0;
-  item.setAttribute("role", "button");
-  item.setAttribute("aria-label", `Attach session result ${row.title ?? row.sessionId} as Pi source context`);
+  item.setAttribute("aria-label", `Session: ${displayTitle(row)}`);
   const sessionHref = `/session/${encodeURIComponent(row.sessionId)}`;
   const project = projectDisplay(row);
   const relation = relationDisplay(row);
   const runtime = runtimeDisplay(row);
   const activity = activityMetrics(row);
-  item.innerHTML = `<div class="result-cell"><div class="agent-avatar agent-avatar--${row.provider}" title="${escapeHtml(row.provider)}">${escapeHtml(providerGlyph(row.provider))}</div></div><div class="result-cell task-cell"><a class="task-title" href="${sessionHref}">${escapeHtml(displayTitle(row))}</a><div class="task-subtitle">${escapeHtml(displaySubtitle(row))}</div></div><div class="result-cell project-cell"><div class="project-line"><span class="project-name">${escapeHtml(project)}</span></div></div><div class="result-cell relation-cell"><span class="relation-pill relation-pill--${relation.kind}">${escapeHtml(relation.label)}</span>${relation.subtext ? `<span class="relation-sub">${escapeHtml(relation.subtext)}</span>` : ""}</div><div class="result-cell runtime-cell"><span>${escapeHtml(runtime.date)}</span><span class="runtime-sub">${escapeHtml(runtime.time)} · ${escapeHtml(runtime.duration)}</span></div><div class="result-cell activity-cell"><span class="activity-metric"><span class="activity-number">${activity.tokens}</span><span class="activity-label">tokens</span></span><span class="activity-metric"><span class="activity-number">${activity.turns}</span><span class="activity-label">turns</span></span><span class="mini-bars" aria-hidden="true"><span></span><span></span><span></span></span><span class="activity-metric"><span class="activity-number">${activity.tools}</span><span class="activity-label">tools</span></span></div><div class="result-cell"><span class="match-pill">${matchScore(row)}</span></div><div class="result-cell actions-cell"><a class="table-action" data-action="open" href="${sessionHref}" aria-label="Open ${escapeHtml(displayTitle(row))}">↗</a><button class="table-action" data-action="pi" type="button" aria-label="Attach ${escapeHtml(displayTitle(row))} as Pi context">Pi</button><button class="table-action copy-action" data-action="copy" type="button" aria-label="Copy raw transcript path">⧉</button></div>`;
+  item.innerHTML = `<div class="result-cell"><div class="agent-avatar agent-avatar--${row.provider}" title="${escapeHtml(row.provider)}" aria-label="${escapeHtml(row.provider)} agent">${escapeHtml(providerGlyph(row.provider))}</div></div><div class="result-cell task-cell"><a class="task-title" href="${sessionHref}">${escapeHtml(displayTitle(row))}</a><div class="task-subtitle">${escapeHtml(displaySubtitle(row))}</div></div><div class="result-cell project-cell"><div class="project-line"><span class="project-name">${escapeHtml(project)}</span></div></div><div class="result-cell relation-cell"><span class="relation-pill relation-pill--${relation.kind}">${escapeHtml(relation.label)}</span>${relation.subtext ? `<span class="relation-sub">${escapeHtml(relation.subtext)}</span>` : ""}</div><div class="result-cell runtime-cell"><span>${escapeHtml(runtime.date)}</span><span class="runtime-sub">${escapeHtml(runtime.time)} · ${escapeHtml(runtime.duration)}</span></div><div class="result-cell activity-cell"><span class="activity-metric" title="${escapeHtml(activity.tokenTitle)}"><span class="activity-number">${activity.tokens}</span><span class="activity-label">tokens</span></span><span class="activity-metric"><span class="activity-number">${activity.turns}</span><span class="activity-label">turns</span></span><span class="activity-metric"><span class="activity-number">${activity.tools}</span><span class="activity-label">tools</span></span></div><div class="result-cell"><span class="match-pill" title="Relevance score 0\u20131. Higher = stronger keyword and semantic match.">${matchScore(row)}</span></div><div class="result-cell actions-cell"><button class="table-action" data-action="pi" type="button" aria-label="Attach ${escapeHtml(displayTitle(row))} as Pi context">Pi</button><button class="table-action copy-action" data-action="copy" type="button" aria-label="Copy raw transcript path">⧉</button></div>`;
   const selectResult = (): void => {
     document.querySelectorAll(".result--featured").forEach((node) => node.classList.remove("result--featured"));
     setSelectedChatItem({ kind: "session result", label: row.title ?? row.sessionId, data: summarizeSearchResult(row) });
@@ -440,11 +439,6 @@ function searchResultNode(row: SearchResult, options: SearchResultRenderOptions 
   };
   item.addEventListener("click", (event) => {
     if ((event.target as HTMLElement).closest("a,button")) return;
-    selectResult();
-  });
-  item.addEventListener("keydown", (event) => {
-    if (event.key !== "Enter" && event.key !== " ") return;
-    event.preventDefault();
     selectResult();
   });
   item.querySelectorAll<HTMLAnchorElement>("a[href]").forEach((link) => link.addEventListener("click", openSession));
@@ -533,8 +527,17 @@ function displayTitle(row: SearchResult): string {
 }
 
 function displaySubtitle(row: SearchResult): string {
-  const raw = (row.snippet || row.path).replaceAll("[", "").replaceAll("]", "").replace(/\s+/gu, " ").trim();
-  return raw || row.path;
+  if (row.snippet) {
+    const cleaned = row.snippet.replaceAll("[", "").replaceAll("]", "").replace(/\s+/gu, " ").trim();
+    if (cleaned) return cleaned;
+  }
+  return shortenPath(row.path);
+}
+
+function shortenPath(p: string): string {
+  const parts = p.split("/").filter(Boolean);
+  if (parts.length <= 2) return p;
+  return `\u2026/${parts.slice(-2).join("/")}`;
 }
 
 function projectDisplay(row: SearchResult): string {
@@ -545,9 +548,7 @@ function projectDisplay(row: SearchResult): string {
 
 function relationDisplay(row: SearchResult): { kind: "primary" | "subagent" | "batch"; label: string; subtext: string } {
   if (row.isSubagent) {
-    const parentLabel = row.groupLabel ?? row.parentTitle ?? null;
-    const parentProject = parentLabel ? truncateForContext(parentLabel.replace(/^Primary:\s*/iu, "").replace(/^\[[^\]]+\]\s*/u, "").replace(/^Task:\s*/iu, "").trim(), 28) : projectDisplay(row);
-    return { kind: "subagent", label: "subagent of", subtext: parentProject };
+    return { kind: "subagent", label: "subagent of", subtext: projectDisplay(row) };
   }
   if (row.isBatch) return { kind: "batch", label: "batch", subtext: row.startedAt ? `#${row.startedAt.slice(0, 10)}` : "batch run" };
   return { kind: "primary", label: "primary", subtext: "" };
@@ -567,11 +568,13 @@ function runtimeDisplay(row: SearchResult): { date: string; time: string; durati
   };
 }
 
-function activityMetrics(row: SearchResult): { tokens: number; turns: number; tools: number } {
+function activityMetrics(row: SearchResult): { tokens: string; tokenTitle: string; turns: number; tools: number } {
   const rawTokens = row.tokenEstimate ?? estimateTokens(`${row.title ?? ""}\n${row.snippet ?? ""}`);
   const hash = stableHash(`${row.sessionId}:${row.path}`);
+  const kValue = Math.max(1, Math.round(rawTokens / 1000));
   return {
-    tokens: Math.max(1, Math.round(rawTokens / 1000)),
+    tokens: `${kValue}k`,
+    tokenTitle: `~${rawTokens.toLocaleString()} estimated tokens`,
     turns: Math.max(3, Math.min(42, Math.round(rawTokens / 1800) + (hash % 3))),
     tools: Math.max(1, Math.min(9, 2 + (hash % 5))),
   };
