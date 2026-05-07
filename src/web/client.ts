@@ -827,10 +827,10 @@ function updateChatSessionPill(): void {
 }
 
 function renderChatTabs(): void {
-  chatTabs.replaceChildren(...piChats.map(chatTabNode));
+  chatTabs.replaceChildren(...piChats.map((chat, i) => chatTabNode(chat, i)));
 }
 
-function chatTabNode(chat: PiChat): HTMLElement {
+function chatTabNode(chat: PiChat, index: number): HTMLElement {
   const tab = document.createElement("div");
   tab.className = `chat-tab${chat.id === piChatId ? " active" : ""}`;
   tab.setAttribute("role", "tab");
@@ -838,8 +838,8 @@ function chatTabNode(chat: PiChat): HTMLElement {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "chat-tab-button";
-  button.textContent = chatTabLabel(chat);
-  button.title = `Switch to chat ${chat.id}`;
+  button.textContent = chatTabLabel(chat, index);
+  button.title = `Switch to Chat ${index + 1}`;
   button.addEventListener("click", () => switchPiChat(chat.id));
   tab.append(button);
   if (piChats.length > 1) {
@@ -847,7 +847,7 @@ function chatTabNode(chat: PiChat): HTMLElement {
     close.type = "button";
     close.className = "chat-tab-close";
     close.textContent = "×";
-    close.title = `Close chat ${chat.id.slice(0, 8)}`;
+    close.title = `Close Chat ${index + 1}`;
     close.addEventListener("click", (event) => {
       event.stopPropagation();
       closePiChat(chat.id);
@@ -857,9 +857,9 @@ function chatTabNode(chat: PiChat): HTMLElement {
   return tab;
 }
 
-function chatTabLabel(chat: PiChat): string {
+function chatTabLabel(chat: PiChat, index: number): string {
   const firstUser = chat.history.find((message) => message.role === "user")?.content.trim();
-  return firstUser ? truncateForContext(firstUser.replace(/\s+/g, " "), 22) : `chat ${chat.id.slice(0, 8)}`;
+  return firstUser ? truncateForContext(firstUser.replace(/\s+/g, " "), 22) : `Chat ${index + 1}`;
 }
 
 function renderChatMessages(): void {
@@ -882,6 +882,7 @@ function setSelectedChatItem(item: SelectedChatItem | null): void {
   label.textContent = item ? `${item.kind}: ${item.label}` : "";
   updatePiContextPreview();
   updateSourceChips();
+  updatePromptPlaceholder();
 }
 
 function screenContext(): unknown {
@@ -1008,6 +1009,8 @@ function updatePiContextPreview(): void {
     usageRows: activeTab === "usage" ? lastUsageResponse?.summary.length ?? 0 : undefined,
   };
   element<HTMLPreElement>("piContextPreview").textContent = JSON.stringify(preview, null, 2);
+  const previewSummary = document.getElementById("contextPreviewSummary");
+  if (previewSummary) previewSummary.textContent = `Context · ${files.length} file${files.length !== 1 ? "s" : ""}${selectedChatItem ? " + 1 selected" : ""}`;
   updateSourceChips();
 }
 
@@ -1016,7 +1019,8 @@ function updateSourceChips(): void {
   refreshSourceFileSelection();
   const availableFiles = screenSourceFiles();
   const files = relatedFiles();
-  const chips: HTMLElement[] = [sourceChip(`tab: ${activeTab}`)];
+  const viewLabel = activeTab === "session" ? "Session" : activeTab === "usage" ? "Usage" : "Search";
+  const chips: HTMLElement[] = [sourceChip(viewLabel)];
   chips.push(sourceFilePicker(availableFiles, files));
   if (currentSessionDetails) chips.push(sourceChip(`session: ${truncateForContext(currentSessionDetails.title ?? currentSessionDetails.sessionId, 42)}`));
   if (selectedChatItem) chips.push(sourceChip(`selected: ${truncateForContext(selectedChatItem.label, 42)}`, () => setSelectedChatItem(null)));
@@ -1045,7 +1049,18 @@ function sourceFilePicker(availableFiles: string[], selectedFiles: string[]): HT
   const list = document.createElement("div");
   list.className = "source-file-list";
   for (const file of availableFiles) list.append(sourceFileRow(file));
-  panel.append(hint, actions, list);
+  const filterInput = document.createElement("input");
+  filterInput.type = "search";
+  filterInput.className = "source-picker-filter";
+  filterInput.placeholder = "Filter files…";
+  filterInput.addEventListener("input", () => {
+    const q = filterInput.value.toLowerCase();
+    list.querySelectorAll<HTMLElement>(".source-file-row").forEach((row) => {
+      const p = row.dataset.path ?? "";
+      row.hidden = Boolean(q) && !p.toLowerCase().includes(q);
+    });
+  });
+  panel.append(hint, actions, filterInput, list);
   details.append(panel);
   return details;
 }
@@ -1053,6 +1068,7 @@ function sourceFilePicker(availableFiles: string[], selectedFiles: string[]): HT
 function sourceFileRow(file: string): HTMLElement {
   const row = document.createElement("label");
   row.className = "source-file-row";
+  row.dataset.path = file;
   const input = document.createElement("input");
   input.type = "checkbox";
   input.checked = !excludedSourceFiles.has(file);
@@ -1061,10 +1077,17 @@ function sourceFileRow(file: string): HTMLElement {
     else excludedSourceFiles.add(file);
     updatePiContextPreview();
   });
+  const filename = file.split("/").pop() || file;
   const pathText = document.createElement("span");
   pathText.className = "source-file-path";
   pathText.title = file;
-  pathText.textContent = file;
+  const nameEl = document.createElement("span");
+  nameEl.className = "source-file-name";
+  nameEl.textContent = filename;
+  const fullEl = document.createElement("span");
+  fullEl.className = "source-file-full";
+  fullEl.textContent = file;
+  pathText.append(nameEl, fullEl);
   const remove = smallButton("×", () => { excludedSourceFiles.add(file); updatePiContextPreview(); });
   remove.classList.add("source-remove");
   remove.title = "Remove this file from Pi context";
@@ -1164,6 +1187,7 @@ function clearFilters(): void {
 }
 
 function setPiStatus(message: string): void { element<HTMLElement>("piStatus").textContent = message; }
+function updatePromptPlaceholder(): void { element<HTMLTextAreaElement>("piPrompt").placeholder = selectedChatItem ? `Ask Pi about the selected ${selectedChatItem.kind}…` : "Ask Pi about this screen…"; }
 function truncateForContext(text: string, max: number): string { return text.length <= max ? text : `${text.slice(0, max)}…`; }
 
 function renderSession(details: SessionDetails): void {
@@ -1189,6 +1213,30 @@ function renderSession(details: SessionDetails): void {
   bindTranscriptControls(details.transcript);
 }
 
+function turnSidebarLabel(item: TranscriptItem): string {
+  const role = cssRole(item.role);
+  const text = item.content.trim();
+  if (!text) return "(empty)";
+  if (role === "user") {
+    const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+    const prose = lines.find((l) => l.length > 5 && !/^[{[$#>\\]/.test(l));
+    return truncateForContext(prose ?? lines[0] ?? "(user)", 52);
+  }
+  if (role === "assistant") {
+    const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+    const prose = lines.find((l) => l.length > 5 && !/^[{[$#>`<\\]/.test(l) && !l.startsWith("```") && !l.startsWith("tool:"));
+    return truncateForContext(prose ?? lines[0] ?? "(response)", 52);
+  }
+  if (role === "tool" || role === "bashexecution") {
+    const nameMatch = /"name":\s*"([^"]{1,40})"/.exec(text);
+    if (nameMatch?.[1]) return nameMatch[1];
+    const cmdMatch = /(?:^|[\n\r])\s*(?:\$|>|❯)?\s*([\w/.-]{1,30})/.exec(text);
+    if (cmdMatch?.[1]) return truncateForContext(cmdMatch[1].trim(), 52);
+  }
+  const firstLine = text.split("\n").find((l) => l.trim())?.trim();
+  return truncateForContext(firstLine ?? `(${role})`, 52);
+}
+
 function renderTranscript(items: TranscriptItem[]): void {
   const nav = element<HTMLElement>("turnSidebar");
   const transcript = element<HTMLElement>("transcript");
@@ -1202,7 +1250,9 @@ function renderTranscript(items: TranscriptItem[]): void {
     const id = `turn-${item.index}`;
     const link = document.createElement("a");
     link.href = `#${id}`;
-    link.innerHTML = `<span class="muted">#${item.index}</span> ${escapeHtml(item.role)}<br><span>${escapeHtml(item.content.slice(0, 90))}</span>`;
+    const roleIconMap: Record<string, string> = { user: "↑", assistant: "↓", tool: "⚙", tool_result: "✓", toolresult: "✓", bashexecution: "$", system: "⊛", summary: "◈" };
+    const roleIcon = roleIconMap[cssRole(item.role)] ?? "·";
+    link.innerHTML = `<span class="tsb-head"><span class="tsb-num">#${item.index}</span><span class="tsb-role tsb-role--${cssRole(item.role)}">${escapeHtml(roleIcon)}</span></span><span class="tsb-label">${escapeHtml(turnSidebarLabel(item))}</span>`;
     link.addEventListener("click", (event) => { event.preventDefault(); highlightTurn(item.index); });
     nav.append(link);
     const card = document.createElement("article");

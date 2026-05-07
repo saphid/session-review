@@ -343,6 +343,26 @@
       .tc-btn { padding:4px 10px; font-size:12px; min-height:28px; }
       .tc-toolbar input[type="number"] { width:62px; padding:4px 8px; font-size:12px; min-height:28px; }
       .tc-toolbar select { min-width:130px; padding:4px 28px 4px 8px; font-size:12px; min-height:28px; }
+      /* Transcript sidebar labels */
+      .turn-sidebar a { display:grid; gap:2px; }
+      .tsb-head { display:flex; align-items:center; gap:5px; }
+      .tsb-num { color:#5b6478; font-size:11px; font-variant-numeric:tabular-nums; }
+      .tsb-role { display:inline-flex; width:16px; height:16px; place-items:center; font-size:11px; border-radius:3px; font-weight:700; }
+      .tsb-role--user { color:#4f8cff; background:rgba(79,140,255,.14); }
+      .tsb-role--assistant { color:#b6bccb; background:rgba(182,188,203,.1); }
+      .tsb-role--tool, .tsb-role--bashexecution { color:#b177ff; background:rgba(177,119,255,.12); }
+      .tsb-role--tool_result, .tsb-role--toolresult { color:#9ee493; background:rgba(158,228,147,.1); }
+      .tsb-role--system, .tsb-role--summary { color:#7b8498; background:rgba(123,132,152,.1); }
+      .tsb-label { font-size:11px; color:#c5cdd8; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; line-height:1.3; }
+      /* Assistant prose: sans-serif for human-readable text, keep mono for tool output */
+      .turn-card.assistant .turn-text, .turn-card.user .turn-text { font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,sans-serif; }
+      /* Source file picker filter + filename display */
+      .source-picker-filter { width:100%; margin:0 0 6px; padding:4px 8px; font:12px ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,sans-serif; background:rgba(8,11,18,.82); border:1px solid rgba(132,148,180,.2); color:#e4e9f8; border-radius:3px; min-height:0; box-shadow:none; }
+      .source-picker-filter:focus { border-color:rgba(124,156,255,.6); }
+      .source-file-path { min-width:0; display:grid; gap:1px; }
+      .source-file-name { color:#e4e9f8; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .source-file-full { color:#8b94a8; font-size:10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .source-picker-panel p { white-space:normal; overflow-wrap:break-word; }
       @media (max-width: 1380px) { .evidence-table { min-width:1060px; } .evidence-grid { grid-template-columns:58px minmax(220px,2fr) minmax(148px,.82fr) minmax(124px,.7fr) 118px 182px 72px 118px; } .activity-cell { grid-template-columns:48px 44px 36px 1fr; gap:7px; } .table-action { min-width:32px; height:34px; padding:0 8px; } .drawer-columns { grid-template-columns:1.2fr 1fr .78fr 1.1fr; } .drawer-column { padding-right:14px; } .drawer-column + .drawer-column { padding-left:14px; } }
       .sidebar-resize-handle, .pi-sidebar { display:none; }
       body[data-active-tab="session"] .app-shell { grid-template-columns:var(--sidebar-width) minmax(0,1fr) 14px var(--pi-sidebar-width,320px); }
@@ -448,7 +468,7 @@
     <div id="sourceChips" class="source-chips" aria-label="Active Pi sources"></div>
     <div id="selectedChatItem" class="selected-chat-item" hidden><span id="selectedChatItemLabel"></span><button id="clearSelectedChatItem" type="button">Clear</button></div>
     <details>
-      <summary>Context preview</summary>
+      <summary id="contextPreviewSummary">Context</summary>
       <pre id="piContextPreview">No context yet.</pre>
     </details>
   </div>
