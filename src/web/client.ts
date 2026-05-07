@@ -56,7 +56,7 @@ const runButton = element<HTMLButtonElement>("run");
 const piSendButton = element<HTMLButtonElement>("piSend");
 const piNewChatButton = element<HTMLButtonElement>("piNewChat");
 const chatTabs = element<HTMLDivElement>("chatTabs");
-const clearSelectedChatItemButton = element<HTMLButtonElement>("clearSelectedChatItem");
+// clearSelectedChatItem bar removed (INV-6); Escape key still clears selection via existing keydown handler
 const clearFiltersButton = element<HTMLButtonElement>("clearFilters");
 const filtersToggle = element<HTMLButtonElement>("filtersToggle");
 const filterPanel = element<HTMLElement>("filterPanel");
@@ -75,7 +75,7 @@ usageTab.addEventListener("click", () => setTab("usage"));
 runButton.addEventListener("click", () => void run());
 piSendButton.addEventListener("click", () => void sendPiChat());
 piNewChatButton.addEventListener("click", () => createPiChatTab());
-clearSelectedChatItemButton.addEventListener("click", () => setSelectedChatItem(null));
+// (clearSelectedChatItem button removed — removable chip + Escape handles deselection)
 clearFiltersButton.addEventListener("click", () => { clearFilters(); void run(); });
 filtersToggle.addEventListener("click", () => toggleFiltersPanel());
 projectSelect.addEventListener("change", () => {
@@ -876,7 +876,18 @@ function chatContentNodes(content: string): Node[] {
 function chatEmptyState(): HTMLElement {
   const empty = document.createElement("div");
   empty.className = "chat-empty";
-  empty.textContent = "Ask about the current results or transcript. Select a result, group, or turn to attach it as source context.";
+  if (selectedChatItem) {
+    empty.textContent = `Context ready. Ask about the selected ${selectedChatItem.kind} \u2014 ${truncateForContext(selectedChatItem.label, 42)}. Or select another turn or result.`;
+  } else {
+    const files = relatedFiles();
+    if (files.length > 0) {
+      const ctx = activeTab === "session" ? "session" : "results";
+      const sessionTitle = currentSessionDetails?.title;
+      empty.textContent = `${files.length} source file${files.length !== 1 ? "s" : ""} attached${sessionTitle ? ` for: ${truncateForContext(sessionTitle, 38)}` : ""}. Ask Pi about the current ${ctx}.`;
+    } else {
+      empty.textContent = "Ask about the current results or transcript. Select a result, group, or turn to attach it as source context.";
+    }
+  }
   return empty;
 }
 
@@ -935,13 +946,10 @@ function renderChatMessages(): void {
 function setSelectedChatItem(item: SelectedChatItem | null): void {
   selectedChatItem = item;
   document.querySelectorAll(".selected-for-chat").forEach((node) => node.classList.remove("selected-for-chat"));
-  const chip = element<HTMLDivElement>("selectedChatItem");
-  const label = element<HTMLSpanElement>("selectedChatItemLabel");
-  chip.hidden = !item;
-  label.textContent = item ? `${item.kind}: ${item.label}` : "";
   updatePiContextPreview();
   updateSourceChips();
   updatePromptPlaceholder();
+  if (activeChat().history.length === 0) renderChatMessages();
 }
 
 function screenContext(): unknown {
@@ -1055,19 +1063,24 @@ function updatePiContextPreview(): void {
   refreshSourceFileSelection();
   const availableFiles = screenSourceFiles();
   const files = relatedFiles();
-  const preview = {
-    chatId: piChatId,
-    tab: activeTab,
-    files: files.slice(0, 20),
-    fileCount: files.length,
-    availableFileCount: availableFiles.length,
-    excludedFileCount: availableFiles.length - files.length,
+  const viewLabel = activeTab === "session" ? "session" : activeTab === "usage" ? "usage" : "search";
+  const parts: string[] = [];
+  parts.push(`${files.length} source file${files.length !== 1 ? "s" : ""} · ${viewLabel} view`);
+  if (selectedChatItem) parts.push(`Selection: ${selectedChatItem.kind} — ${truncateForContext(selectedChatItem.label, 50)}`);
+  if (currentSessionDetails) parts.push(`Session: "${truncateForContext(currentSessionDetails.title ?? currentSessionDetails.sessionId, 50)}"`);
+  if (availableFiles.length > files.length) parts.push(`${availableFiles.length - files.length} file${availableFiles.length - files.length !== 1 ? "s" : ""} excluded`);
+  const debugPayload = {
+    chatId: piChatId, tab: activeTab,
+    files: files.slice(0, 20), fileCount: files.length,
+    availableFileCount: availableFiles.length, excludedFileCount: availableFiles.length - files.length,
     selectedItem: selectedChatItem ? { kind: selectedChatItem.kind, label: selectedChatItem.label } : null,
     currentSession: currentSessionDetails ? { id: currentSessionDetails.sessionId, title: currentSessionDetails.title, path: currentSessionDetails.path } : null,
     searchResults: activeTab === "search" ? lastSearchRows.length : undefined,
     usageRows: activeTab === "usage" ? lastUsageResponse?.summary.length ?? 0 : undefined,
   };
-  element<HTMLPreElement>("piContextPreview").textContent = JSON.stringify(preview, null, 2);
+  const summaryHtml = parts.map((p) => `<p>${escapeHtml(p)}</p>`).join("");
+  const debugHtml = `<details class="ctx-debug"><summary>Debug JSON</summary><pre>${escapeHtml(JSON.stringify(debugPayload, null, 2))}</pre></details>`;
+  element<HTMLDivElement>("piContextPreview").innerHTML = summaryHtml + debugHtml;
   const previewSummary = document.getElementById("contextPreviewSummary");
   if (previewSummary) previewSummary.textContent = `Context · ${files.length} file${files.length !== 1 ? "s" : ""}${selectedChatItem ? " + 1 selected" : ""}`;
   updateSourceChips();
@@ -1081,9 +1094,19 @@ function updateSourceChips(): void {
   const viewLabel = activeTab === "session" ? "Session" : activeTab === "usage" ? "Usage" : "Search";
   const chips: HTMLElement[] = [sourceChip(viewLabel)];
   chips.push(sourceFilePicker(availableFiles, files));
-  if (currentSessionDetails) chips.push(sourceChip(currentSessionDetails.title ?? currentSessionDetails.sessionId));
+  if (currentSessionDetails) chips.push(sourceChipPassive(`\u21b3 ${truncateForContext(currentSessionDetails.title ?? currentSessionDetails.sessionId, 42)}`, `Current session: ${currentSessionDetails.title ?? currentSessionDetails.sessionId}`));
   if (selectedChatItem) chips.push(sourceChip(`selected: ${truncateForContext(selectedChatItem.label, 42)}`, () => setSelectedChatItem(null)));
   target.replaceChildren(...chips);
+}
+
+function sourceChipPassive(text: string, fullTitle?: string): HTMLElement {
+  const chip = document.createElement("span");
+  chip.className = "source-chip source-chip--passive";
+  chip.title = fullTitle ?? text;
+  const label = document.createElement("span");
+  label.textContent = text;
+  chip.append(label);
+  return chip;
 }
 
 function sourceFilePicker(availableFiles: string[], selectedFiles: string[]): HTMLElement {
@@ -1142,14 +1165,14 @@ function sourceFileRow(file: string): HTMLElement {
   pathText.title = file;
   const nameEl = document.createElement("span");
   nameEl.className = "source-file-name";
-  nameEl.textContent = filename;
+  nameEl.textContent = sessionLabelForPath(file);
   const fullEl = document.createElement("span");
   fullEl.className = "source-file-full";
-  fullEl.textContent = file;
+  fullEl.textContent = filename;
   pathText.append(nameEl, fullEl);
   const remove = smallButton("×", () => { excludedSourceFiles.add(file); updatePiContextPreview(); });
   remove.classList.add("source-remove");
-  remove.title = "Remove this file from Pi context";
+  remove.title = "Exclude this file from Pi context";
   row.append(input, pathText, remove);
   return row;
 }
@@ -1175,6 +1198,13 @@ function sourceNoteNode(): HTMLElement {
   if (selectedChatItem) note.append(sourceChip(`selected ${selectedChatItem.kind}: ${truncateForContext(selectedChatItem.label, 42)}`));
   if (currentSessionDetails) note.append(sourceChip(currentSessionDetails.title ?? currentSessionDetails.sessionId.slice(0, 8)));
   return note;
+}
+
+function sessionLabelForPath(path: string): string {
+  if (currentSessionDetails?.path === path && currentSessionDetails.title) return truncateForContext(currentSessionDetails.title, 58);
+  const fromSearch = lastSearchRows.find((r) => r.path === path);
+  if (fromSearch?.title) return truncateForContext(fromSearch.title, 58);
+  return path.split("/").pop() ?? path;
 }
 
 function sourceChip(text: string, onRemove?: () => void): HTMLElement {
@@ -1256,6 +1286,13 @@ function clearFilters(): void {
   setStatus("Filters cleared. Run the query to reload all sessions.");
 }
 
+function formatSessionDate(iso: string | null): string {
+  if (!iso) return "unknown date";
+  const d = new Date(iso);
+  if (Number.isNaN(d.valueOf())) return iso;
+  return new Intl.DateTimeFormat("en-AU", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(d);
+}
+
 function setPiStatus(message: string): void { element<HTMLElement>("piStatus").textContent = message; }
 function updatePromptPlaceholder(): void { element<HTMLTextAreaElement>("piPrompt").placeholder = selectedChatItem ? `Ask Pi about the selected ${selectedChatItem.kind}…` : "Ask Pi about this screen…"; }
 function truncateForContext(text: string, max: number): string { return text.length <= max ? text : `${text.slice(0, max)}…`; }
@@ -1264,10 +1301,23 @@ function renderSession(details: SessionDetails): void {
   const target = element<HTMLDivElement>("sessionDetails");
   const tools = details.usage.filter((entry) => entry.kind === "tool");
   const skills = details.usage.filter((entry) => entry.kind === "skill");
-  const purposeHtml = details.purpose ? `<div class="sd-meta-item"><p class="sd-meta-label">Purpose</p><p class="sd-meta-value">${escapeHtml(details.purpose)}</p></div>` : "";
+  const purposeHtml = (details.purpose && details.purpose.trim() !== (details.title ?? "").trim()) ? `<div class="sd-meta-item"><p class="sd-meta-label">Purpose</p><p class="sd-meta-value">${escapeHtml(details.purpose)}</p></div>` : "";
   const cwdHtml = details.cwd ? `<div class="sd-meta-item"><p class="sd-meta-label">Working directory</p><p class="sd-meta-mono">${escapeHtml(details.cwd)}</p></div>` : "";
-  target.innerHTML = `<div class="sd-panel"><a class="sd-back" href="/">← Sessions</a><h2 class="sd-title">${escapeHtml(details.title ?? "Untitled")}</h2><div class="sd-byline"><span class="sd-badge-provider">${escapeHtml(details.provider)}</span><span class="sd-dot">·</span><span>${escapeHtml(details.startedAt ?? "unknown date")}</span><span class="sd-dot">·</span><span>${details.isBatch ? "batch run" : "standard run"}</span></div><div class="sd-meta-grid">${purposeHtml}${cwdHtml}<div class="sd-meta-item sd-meta-full"><p class="sd-meta-label">Transcript path</p><div class="sd-path-row"><div class="sd-path-box">${escapeHtml(details.path)}</div><button class="table-action copy-action sd-path-copy" type="button" aria-label="Copy transcript path">⧉</button></div></div></div><div class="sd-stat-strip"><div class="sd-stat"><span class="sd-stat-num">${details.turnCount}</span><span class="sd-stat-label">turns</span></div><div class="sd-stat"><span class="sd-stat-num">${details.toolUseCount}</span><span class="sd-stat-label">tools</span></div><div class="sd-stat"><span class="sd-stat-num">${details.skillUseCount}</span><span class="sd-stat-label">skills</span></div><div class="sd-stat"><span class="sd-stat-num">${details.linkedSessions.length}</span><span class="sd-stat-label">linked</span></div></div></div><div class="tc-toolbar"><div class="tc-group"><span class="tc-label">Lines/turn</span><input id="transcriptLineLimit" type="number" min="3" max="500" value="${transcriptLineLimit()}" /><button id="applyLineLimit" class="tc-btn">Apply</button></div><span class="tc-sep" aria-hidden="true"></span><div class="tc-group"><button id="expandAllTurns" class="tc-btn">Expand all</button><button id="collapseAllTurns" class="tc-btn">Collapse all</button></div><span class="tc-sep" aria-hidden="true"></span><div class="tc-group"><select id="turnTypeSelect"></select><button id="expandTypeTurns" class="tc-btn">Expand type</button><button id="collapseTypeTurns" class="tc-btn">Collapse type</button></div></div><div class="session-layout"><nav class="turn-sidebar" id="turnSidebar"></nav><div class="transcript" id="transcript"></div></div><details class="session-analysis"><summary>Turn analytics and linked sessions</summary><h3>Turn activity</h3><p class="muted">Click a bar to jump to that turn. Tool and skill bars are derived from indexed usage signals.</p><div class="chart-wrap"><canvas id="sessionTurnChart"></canvas></div><h3>Tools</h3><div id="sessionTools"></div><h3>Skills</h3><div id="sessionSkills"></div><h3>Linked subagent / nearby sessions</h3><div id="linkedSessions"></div></details>`;
-  target.querySelector<HTMLAnchorElement>(".sd-back")?.addEventListener("click", (event) => { event.preventDefault(); history.pushState(null, "", "/"); setTab("search"); });
+  target.innerHTML = `<div class="sd-panel"><a class="sd-back" href="/">← Sessions</a><h2 class="sd-title">${escapeHtml(details.title ?? "Untitled")}</h2><div class="sd-byline"><span class="sd-badge-provider">${escapeHtml(details.provider)}</span><span class="sd-dot">·</span><span title="${escapeHtml(details.startedAt ?? "")}">${escapeHtml(formatSessionDate(details.startedAt))}</span><span class="sd-dot">·</span><span class="sd-badge-run">${details.isBatch ? "batch" : "standard"}</span></div><div class="sd-meta-grid">${purposeHtml}${cwdHtml}<div class="sd-meta-item sd-meta-full"><p class="sd-meta-label">Transcript path</p><div class="sd-path-row"><div class="sd-path-box">${escapeHtml(details.path)}</div><button class="table-action copy-action sd-path-copy" type="button" aria-label="Copy transcript path">⧉</button></div></div></div><div class="sd-stat-strip"><div class="sd-stat"><span class="sd-stat-num">${details.turnCount}</span><span class="sd-stat-label">turns</span></div><div class="sd-stat"><span class="sd-stat-num">${details.toolUseCount}</span><span class="sd-stat-label">tools</span></div><div class="sd-stat"><span class="sd-stat-num">${details.skillUseCount}</span><span class="sd-stat-label">skills</span></div><div class="sd-stat"><span class="sd-stat-num">${details.linkedSessions.length}</span><span class="sd-stat-label">linked</span></div></div></div><div class="tc-toolbar"><div class="tc-group"><span class="tc-label">Lines/turn</span><input id="transcriptLineLimit" type="number" min="3" max="500" value="${transcriptLineLimit()}" /><button id="applyLineLimit" class="tc-btn">Apply</button></div><span class="tc-sep" aria-hidden="true"></span><div class="tc-group"><button id="expandAllTurns" class="tc-btn">Expand all</button><button id="collapseAllTurns" class="tc-btn">Collapse all</button></div><span class="tc-sep" aria-hidden="true"></span><div class="tc-group"><select id="turnTypeSelect"></select><button id="expandTypeTurns" class="tc-btn">Expand type</button><button id="collapseTypeTurns" class="tc-btn">Collapse type</button></div></div><div class="session-layout"><nav class="turn-sidebar" id="turnSidebar"></nav><div class="transcript" id="transcript"></div></div><details class="session-analysis"><summary>Turn analytics and linked sessions</summary><h3>Turn activity</h3><p class="muted">Click a bar to jump to that turn. Tool and skill bars are derived from indexed usage signals.</p><div class="chart-wrap"><canvas id="sessionTurnChart"></canvas></div><h3>Tools</h3><div id="sessionTools"></div><h3>Skills</h3><div id="sessionSkills"></div><h3>Linked subagent / nearby sessions</h3><div id="linkedSessions"></div></details>`;
+  target.querySelector<HTMLAnchorElement>(".sd-back")?.addEventListener("click", (event) => {
+    event.preventDefault();
+    history.pushState(null, "", "/");
+    setSelectedChatItem(null);
+    activeTab = "search";
+    syncPanels();
+    if (lastSearchRows.length > 0) {
+      renderSearchPage();
+      setStatus(`${lastSearchRows.length} session${lastSearchRows.length !== 1 ? "s" : ""} \u2014 restored from last search.`);
+    } else {
+      void run();
+    }
+    focusActivePanel();
+  });
   target.querySelector<HTMLButtonElement>(".sd-path-copy")?.addEventListener("click", () => { void navigator.clipboard?.writeText(details.path); });
   const turnCanvas = element<HTMLCanvasElement>("sessionTurnChart");
   turnChart = replaceChart(turnChart, turnCanvas, turnChartConfig(details.transcript));

@@ -167,8 +167,7 @@
       .empty-state p { margin:0 0 10px; }
       .empty-state code { display:inline-flex; max-width:100%; overflow:auto; border:1px solid var(--border-soft); border-radius:0; padding:3px 6px; background:var(--field); color:#c8d0e5; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
       .empty-actions { display:flex; gap:6px; flex-wrap:wrap; margin-top:12px; }
-      .selected-chat-item { display:flex; gap:6px; justify-content:space-between; align-items:center; border:1px solid #4864e6; background:rgba(72,100,230,.12); border-radius:0; padding:6px 8px; color:#e7ecff; font-size:12px; }
-      .selected-chat-item[hidden] { display:none; }
+      /* selected-chat-item blue bar removed (INV-6) — represented by removable chip only */
       .chat-header-actions { display:flex; align-items:flex-start; gap:6px; }
       .chat-secondary-action { background:rgba(8,11,18,.82); box-shadow:none; color:#dce4ff; border-color:rgba(124,156,255,.34); }
       .composer-actions--send-only { justify-content:space-between; }
@@ -317,6 +316,15 @@
       .sd-byline { display:flex; align-items:center; gap:8px; flex-wrap:wrap; color:#9aa4b6; font-size:13px; }
       .sd-dot { color:#4b5268; }
       .sd-badge-provider { display:inline-block; padding:2px 8px; border-radius:999px; border:1px solid rgba(132,148,180,.22); font-size:12px; color:#d0d8ea; background:rgba(255,255,255,.06); }
+      .sd-badge-run { display:inline-block; padding:2px 8px; border-radius:999px; border:1px solid rgba(132,148,180,.22); font-size:12px; color:#d0d8ea; background:rgba(255,255,255,.06); }
+      /* INV-6: passive session chip; context preview div; toolbar dim on session detail */
+      .source-chip--passive { opacity:0.72; font-style:italic; }
+      .pi-context-preview { max-height:190px; overflow:auto; padding:8px; border:1px solid var(--border); border-radius:0; background:#0f1117; color:#c8d0e5; font-size:12px; }
+      .pi-context-preview p { margin:0 0 4px; font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,sans-serif; }
+      .ctx-debug { margin-top:4px; }
+      .ctx-debug summary { cursor:pointer; color:#8b94a8; font-size:11px; }
+      .ctx-debug pre { margin:4px 0 0; padding:6px; border:1px solid var(--border); border-radius:0; background:#0a0d12; color:#c8d0e5; font-size:11px; white-space:pre-wrap; overflow-wrap:anywhere; }
+      body[data-active-tab="session"] .top-control, body[data-active-tab="session"] .filter-toggle { opacity:0.55; }
       .sd-meta-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:14px; }
       .sd-meta-item { display:grid; gap:5px; }
       .sd-meta-full { grid-column:1 / -1; }
@@ -498,10 +506,9 @@
   <div id="chatTabs" class="chat-tabs" role="tablist" aria-label="Pi chat tabs"></div>
   <div class="chat-context">
     <div id="sourceChips" class="source-chips" aria-label="Active Pi sources"></div>
-    <div id="selectedChatItem" class="selected-chat-item" hidden><span id="selectedChatItemLabel"></span><button id="clearSelectedChatItem" type="button">Clear</button></div>
     <details>
       <summary id="contextPreviewSummary">Context</summary>
-      <pre id="piContextPreview">No context yet.</pre>
+      <div id="piContextPreview" class="pi-context-preview"><p class="muted">No context yet.</p></div>
     </details>
   </div>
   <div id="chatMessages" class="chat-messages" aria-live="polite"><div class="chat-empty">Ask about the current results or transcript. Select a result, group, or turn to attach it as source context.</div></div>
