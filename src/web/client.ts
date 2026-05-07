@@ -56,6 +56,7 @@ const chatTabs = element<HTMLDivElement>("chatTabs");
 const clearSelectedChatItemButton = element<HTMLButtonElement>("clearSelectedChatItem");
 const clearFiltersButton = element<HTMLButtonElement>("clearFilters");
 const filtersToggle = element<HTMLButtonElement>("filtersToggle");
+const filterPanel = element<HTMLElement>("filterPanel");
 const advancedFiltersPanel = element<HTMLDivElement>("advancedFilters");
 const projectSelect = element<HTMLSelectElement>("projectSelect");
 const pageTitle = element<HTMLHeadingElement>("pageTitle");
@@ -213,7 +214,8 @@ function focusActivePanel(): void {
 }
 
 function toggleFiltersPanel(force?: boolean): void {
-  const open = force ?? advancedFiltersPanel.hidden;
+  const open = force ?? filterPanel.hidden;
+  filterPanel.hidden = !open;
   advancedFiltersPanel.hidden = !open;
   filtersToggle.setAttribute("aria-expanded", String(open));
 }

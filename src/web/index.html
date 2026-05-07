@@ -184,7 +184,7 @@
       [hidden] { display:none !important; }
       header { display:none; }
       .app-shell { display:grid; grid-template-columns:var(--sidebar-width) minmax(0,1fr); gap:0; min-height:100vh; padding:0; max-width:none; align-items:stretch; }
-      .left-sidebar { position:sticky; top:0; height:100vh; display:grid; grid-template-rows:auto 1fr auto; gap:18px; padding:14px 12px; border-right:1px solid var(--chrome-border-strong); background:linear-gradient(180deg,rgba(13,17,22,.98),rgba(9,12,16,.98)); box-shadow:inset -1px 0 rgba(255,255,255,.03); z-index:10; }
+      .left-sidebar { position:fixed; inset:0 auto 0 0; width:var(--sidebar-width); height:100vh; display:grid; grid-template-rows:auto 1fr auto; gap:18px; padding:14px 12px; border-right:1px solid var(--chrome-border-strong); background:linear-gradient(180deg,rgba(13,17,22,.98),rgba(9,12,16,.98)); box-shadow:inset -1px 0 rgba(255,255,255,.03); z-index:10; }
       .brand { display:flex; align-items:center; gap:12px; min-height:36px; }
       .brand-mark { width:36px; height:36px; display:grid; place-items:center; border:1px solid rgba(113,144,255,.72); border-radius:6px; color:#f8fbff; background:linear-gradient(180deg,#111827,#070a0f); box-shadow:0 0 0 1px rgba(255,255,255,.04), 0 0 26px rgba(78,111,255,.16); font:700 18px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
       .brand-name { font-size:18px; line-height:1; font-weight:800; letter-spacing:-.02em; }
@@ -197,9 +197,12 @@
       .nav-label { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
       .nav-count { min-width:38px; justify-self:end; padding:3px 7px; border-radius:5px; background:rgba(255,255,255,.09); color:#dce3f1; font:600 12px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; text-align:center; }
       .sidebar-bottom { display:grid; gap:8px; }
+      .sidebar-footer { display:grid; grid-template-columns:minmax(0,1fr) 38px; gap:8px; align-items:center; }
       .admin-card { display:grid; grid-template-columns:24px minmax(0,1fr) auto; align-items:center; gap:9px; min-height:38px; padding:6px 10px; border:1px solid var(--chrome-border); border-radius:5px; background:rgba(255,255,255,.035); color:#d7deeb; }
       .admin-avatar { width:24px; height:24px; display:grid; place-items:center; border-radius:50%; background:linear-gradient(180deg,#5678e8,#253a8d); color:white; font-size:12px; font-weight:800; }
-      .main-cockpit { grid-column:2; display:grid; grid-template-rows:auto minmax(0,1fr); gap:10px; min-width:0; padding:12px; background:radial-gradient(circle at 50% 0%, rgba(255,255,255,.035), transparent 30%); }
+      .settings-quick { width:38px; height:38px; display:grid; place-items:center; padding:0; border:1px solid var(--chrome-border); border-radius:5px; background:rgba(255,255,255,.035); color:#cbd3e5; box-shadow:none; }
+      .settings-quick:hover { transform:none; filter:brightness(1.12); }
+      .main-cockpit { grid-column:2; min-height:100vh; display:grid; grid-template-rows:auto minmax(0,1fr); gap:10px; min-width:0; padding:12px; background:radial-gradient(circle at 50% 0%, rgba(255,255,255,.035), transparent 30%); }
       .page-toolbar { display:flex; justify-content:space-between; align-items:center; gap:14px; min-height:42px; }
       .page-title { display:flex; align-items:baseline; gap:8px; min-width:0; }
       .page-title h1 { margin:0; color:#f6f8fd; font-size:22px; letter-spacing:-.035em; }
@@ -209,6 +212,7 @@
       .top-control, .filter-toggle, .top-search { min-height:36px; border:1px solid var(--chrome-border-strong); border-radius:5px; background:rgba(9,13,18,.72); color:#f0f3fa; box-shadow:none; }
       .filter-toggle { display:inline-flex; align-items:center; gap:8px; padding:0 16px; font-weight:650; }
       .filter-toggle:hover, .top-control:hover { transform:none; filter:brightness(1.08); }
+      .control-icon { width:16px; height:16px; color:#cbd3e5; flex:0 0 auto; }
       .top-control { min-width:150px; padding:0 38px 0 14px; }
       .top-search { width:min(320px,30vw); display:grid; grid-template-columns:18px minmax(0,1fr) auto; align-items:center; gap:9px; padding:0 8px 0 12px; }
       .top-search input { width:100%; min-height:0; padding:0; border:0; background:transparent; box-shadow:none; }
@@ -217,6 +221,7 @@
       .tabs { display:none; }
       section, .pi-sidebar { background:linear-gradient(180deg,rgba(18,23,30,.96),rgba(13,18,24,.96)); border-color:var(--chrome-border); border-radius:5px; box-shadow:0 14px 30px rgba(0,0,0,.18); }
       .filter-panel { padding:0; background:transparent; border:0; box-shadow:none; }
+      .filter-panel[hidden] { display:none; }
       .filters { border:1px solid var(--chrome-border); border-radius:5px; padding:10px; background:rgba(14,19,25,.9); }
       .filter-primary { grid-template-columns:minmax(140px,1fr) auto auto; }
       .shortcut-hint { margin:8px 0 0; color:#7f8898; }
@@ -236,7 +241,7 @@
       body[data-active-tab="session"] .app-shell { grid-template-columns:var(--sidebar-width) minmax(0,1fr) 14px var(--pi-sidebar-width,460px); }
       body[data-active-tab="session"] .sidebar-resize-handle { display:block; grid-column:3; }
       body[data-active-tab="session"] .pi-sidebar { display:grid; grid-column:4; }
-      @media (max-width: 1100px) { .app-shell, body[data-active-tab="session"] .app-shell { grid-template-columns:1fr; } .left-sidebar { position:relative; height:auto; grid-template-rows:auto auto auto; } .main-cockpit { grid-column:1; } .side-nav { grid-template-columns:repeat(2,minmax(0,1fr)); } body[data-active-tab="session"] .sidebar-resize-handle, body[data-active-tab="session"] .pi-sidebar { display:none; } .top-controls { flex-wrap:wrap; justify-content:flex-end; } .top-search { width:min(100%,360px); } }
+      @media (max-width: 1100px) { .app-shell, body[data-active-tab="session"] .app-shell { grid-template-columns:1fr; } .left-sidebar { position:relative; inset:auto; width:auto; height:auto; grid-template-rows:auto auto auto; } .main-cockpit { grid-column:1; } .side-nav { grid-template-columns:repeat(2,minmax(0,1fr)); } body[data-active-tab="session"] .sidebar-resize-handle, body[data-active-tab="session"] .pi-sidebar { display:none; } .top-controls { flex-wrap:wrap; justify-content:flex-end; } .top-search { width:min(100%,360px); } }
       @media (max-width: 720px) { .page-toolbar { align-items:flex-start; flex-direction:column; } .top-controls { width:100%; justify-content:stretch; } .filter-toggle, .top-control, .top-search { flex:1 1 100%; width:100%; } .filter-primary { grid-template-columns:1fr; } }
     </style>
   </head>
@@ -260,21 +265,24 @@
     <button class="nav-item" type="button" aria-pressed="false" disabled><span class="nav-icon">⚙</span><span class="nav-label">Settings</span></button>
   </nav>
   <div class="sidebar-bottom">
-    <div class="admin-card"><span class="admin-avatar">A</span><span>admin</span><span aria-hidden="true">⌄</span></div>
+    <div class="sidebar-footer">
+      <div class="admin-card"><span class="admin-avatar">A</span><span>admin</span><span aria-hidden="true">⌄</span></div>
+      <button class="settings-quick" type="button" aria-label="Open settings" disabled>☼</button>
+    </div>
   </div>
 </aside>
 <main class="main-cockpit">
   <div class="page-toolbar">
     <div class="page-title"><h1 id="pageTitle">Sessions</h1><span id="pageKicker" class="page-kicker">Evidence table</span></div>
     <div class="top-controls" aria-label="Session controls">
-      <button id="filtersToggle" class="filter-toggle" type="button" aria-controls="advancedFilters" aria-expanded="false">⌯ Filters</button>
+      <button id="filtersToggle" class="filter-toggle" type="button" aria-controls="filterPanel" aria-expanded="false"><svg class="control-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5h14l-5.5 6v4l-3 1v-5L3 5Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>Filters</button>
       <label class="visually-hidden" for="projectSelect">Project</label>
       <select id="projectSelect" class="top-control"><option value="">All projects</option></select>
-      <label class="top-search"><span aria-hidden="true">⌕</span><input id="query" placeholder="Search sessions…" /><span class="search-key">/</span></label>
+      <label class="top-search"><svg class="control-icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="m12.5 12.5 4 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><input id="query" placeholder="Search sessions…" /><span class="search-key">/</span></label>
     </div>
   </div>
   <div class="content-stack">
-    <section class="filter-panel">
+    <section id="filterPanel" class="filter-panel" hidden>
       <div class="tabs" aria-hidden="true"></div>
       <div class="filters" id="advancedFilters" hidden>
         <div class="filter-primary">
