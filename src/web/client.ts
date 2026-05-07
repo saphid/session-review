@@ -1225,7 +1225,7 @@ function renderSession(details: SessionDetails): void {
 
 function turnSidebarLabel(item: TranscriptItem): string {
   const role = cssRole(item.role);
-  const text = item.content.trim();
+  const text = stripAnsi(item.content).trim();
   if (!text) return "(empty)";
   if (role === "user") {
     const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
@@ -1256,12 +1256,14 @@ function renderTranscript(items: TranscriptItem[]): void {
     nav.replaceChildren(emptyStateNode("No turns", "Turn navigation appears after transcript turns are indexed."));
     return;
   }
+  const roleIconMap: Record<string, string> = { user: "↑", assistant: "↓", tool: "⚙", tool_result: "✓", toolresult: "✓", bashexecution: "$", system: "⊛", summary: "◈", context: "◉" };
+  const dirFallback: Record<string, string> = { input: "↑", output: "↓", context: "◉" };
   for (const item of items) {
     const id = `turn-${item.index}`;
     const link = document.createElement("a");
     link.href = `#${id}`;
-    const roleIconMap: Record<string, string> = { user: "↑", assistant: "↓", tool: "⚙", tool_result: "✓", toolresult: "✓", bashexecution: "$", system: "⊛", summary: "◈" };
-    const roleIcon = roleIconMap[cssRole(item.role)] ?? "·";
+    const dir0 = modelDirection(item.role);
+    const roleIcon = roleIconMap[cssRole(item.role)] ?? dirFallback[dir0.kind] ?? "·";
     link.innerHTML = `<span class="tsb-head"><span class="tsb-num">#${item.index}</span><span class="tsb-role tsb-role--${cssRole(item.role)}">${escapeHtml(roleIcon)}</span></span><span class="tsb-label">${escapeHtml(turnSidebarLabel(item))}</span>`;
     link.addEventListener("click", (event) => { event.preventDefault(); highlightTurn(item.index); });
     nav.append(link);
@@ -1274,7 +1276,7 @@ function renderTranscript(items: TranscriptItem[]): void {
     const direction = modelDirection(item.role);
     card.dataset.role = cssRole(item.role);
     card.dataset.direction = direction.kind;
-    card.dataset.lineCount = String(countContentLines(item.content));
+    card.dataset.lineCount = String(countContentLines(stripAnsi(item.content)));
     const head = document.createElement("div");
     head.className = "turn-head";
     head.innerHTML = `<div class="turn-title"><strong>#${item.index}</strong><span>${escapeHtml(item.role)}</span><span class="io-badge ${direction.className}">${escapeHtml(direction.label)}</span></div><div class="turn-stats"><span>${item.toolCount} tools</span><span>${item.skillCount} skills</span><span title="Estimated from text; raw provider token usage is not always available per turn.">${formatNumber(estimateTokens(item.content))} tokens</span></div><div class="turn-actions"><button class="turn-action collapse-turn" type="button">Collapse</button><button class="turn-action show-more-turn" type="button" hidden>Show more</button></div>`;
@@ -1342,9 +1344,9 @@ function setTurnCollapsed(cards: HTMLElement[], collapsed: boolean): void {
     card.classList.toggle("collapsed", collapsed);
     card.classList.remove("expanded");
     const button = card.querySelector<HTMLButtonElement>(".collapse-turn");
-    if (button) button.textContent = collapsed ? "Expand" : "Collapse";
+    if (button) { button.textContent = collapsed ? "Expand" : "Collapse"; button.hidden = false; }
     const showMore = card.querySelector<HTMLButtonElement>(".show-more-turn");
-    if (showMore) showMore.textContent = "Show more";
+    if (showMore) { showMore.textContent = "Show more"; showMore.hidden = true; }
     if (!collapsed) applyTurnLineLimit(card, transcriptLineLimitFromInput());
   }
 }
@@ -1356,9 +1358,9 @@ function setTurnExpanded(cards: HTMLElement[], expanded: boolean): void {
     const content = card.querySelector<HTMLElement>(".turn-content");
     if (content) content.style.maxHeight = expanded ? "none" : maxHeightForLines(transcriptLineLimitFromInput());
     const collapse = card.querySelector<HTMLButtonElement>(".collapse-turn");
-    if (collapse) collapse.textContent = "Collapse";
+    if (collapse) { collapse.textContent = "Collapse"; collapse.hidden = false; }
     const showMore = card.querySelector<HTMLButtonElement>(".show-more-turn");
-    if (showMore) showMore.textContent = expanded ? "Show less" : "Show more";
+    if (showMore) { showMore.textContent = expanded ? "Show less" : "Show more"; showMore.hidden = !expanded; }
     if (!expanded) applyTurnLineLimit(card, transcriptLineLimitFromInput());
   }
 }
@@ -1376,13 +1378,14 @@ function applyTurnLineLimit(card: HTMLElement, limit: number): void {
   if (!content) return;
   const lineCount = Number(card.dataset.lineCount ?? "0");
   const shouldTruncate = lineCount > limit;
+  const isExpanded = card.classList.contains("expanded");
   card.classList.toggle("truncated", shouldTruncate);
-  if (!card.classList.contains("expanded")) content.style.maxHeight = shouldTruncate ? maxHeightForLines(limit) : "none";
+  if (!isExpanded) content.style.maxHeight = shouldTruncate ? maxHeightForLines(limit) : "none";
+  if (isExpanded) return;
   const showMore = card.querySelector<HTMLButtonElement>(".show-more-turn");
-  if (showMore) {
-    showMore.hidden = !shouldTruncate;
-    showMore.textContent = card.classList.contains("expanded") ? "Show less" : "Show more";
-  }
+  if (showMore) { showMore.hidden = !shouldTruncate; showMore.textContent = "Show more"; }
+  const collapseBtn = card.querySelector<HTMLButtonElement>(".collapse-turn");
+  if (collapseBtn) collapseBtn.hidden = shouldTruncate;
 }
 
 function transcriptLineLimit(): number {
@@ -1398,15 +1401,75 @@ function transcriptLineLimitFromInput(): number {
 function maxHeightForLines(lines: number): string { return `${Math.max(3, lines) * 1.55 + 1}em`; }
 function countContentLines(text: string): number { return text.split(/\r?\n/).reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / 120)), 0); }
 
+function isTableBlock(text: string): boolean {
+  const lines = text.trim().split("\n").map((l) => l.trim()).filter(Boolean);
+  if (lines.length < 2) return false;
+  const allPipeOrSep = lines.every((l) => l.startsWith("|") || /^[\s|:+-]+$/.test(l));
+  const hasSep = lines.some((l) => /^\|?[\s|:+-]+\|?$/.test(l) && l.includes("-"));
+  return allPipeOrSep && hasSep;
+}
+
+function splitTableSegments(text: string): TextSegment[] {
+  const paras = text.split(/\n{2,}/);
+  const segs: TextSegment[] = [];
+  let pending = "";
+  for (const para of paras) {
+    if (isTableBlock(para)) {
+      if (pending.trim()) { segs.push({ kind: "text", text: pending }); pending = ""; }
+      segs.push({ kind: "table", text: para });
+    } else {
+      pending += (pending ? "\n\n" : "") + para;
+    }
+  }
+  if (pending.trim()) segs.push({ kind: "text", text: pending });
+  return segs.length ? segs : [{ kind: "text", text }];
+}
+
+function renderMdTable(text: string): HTMLElement {
+  const lines = text.trim().split("\n").map((l) => l.trim());
+  const sepIdx = lines.findIndex((l) => /^\|?[-|: ]+\|?$/.test(l) && l.includes("-"));
+  const parseRow = (line: string): string[] => line.replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
+  const table = document.createElement("table");
+  table.className = "md-table";
+  if (sepIdx > 0) {
+    const thead = document.createElement("thead");
+    for (let i = 0; i < sepIdx; i++) {
+      const line = lines[i];
+      if (!line?.startsWith("|")) continue;
+      const tr = document.createElement("tr");
+      for (const cell of parseRow(line)) { const th = document.createElement("th"); th.textContent = cell; tr.append(th); }
+      thead.append(tr);
+    }
+    table.append(thead);
+  }
+  const tbody = document.createElement("tbody");
+  for (let i = Math.max(0, sepIdx + 1); i < lines.length; i++) {
+    const line = lines[i];
+    if (!line?.startsWith("|")) continue;
+    const tr = document.createElement("tr");
+    for (const cell of parseRow(line)) { const td = document.createElement("td"); td.textContent = cell; tr.append(td); }
+    tbody.append(tr);
+  }
+  table.append(tbody);
+  return table;
+}
+
 function renderFormattedContent(item: TranscriptItem): HTMLElement {
   const wrapper = document.createElement("div");
-  const blocks = splitCodeFences(item.content, item.role);
+  const content = stripAnsi(item.content);
+  const blocks = splitCodeFences(content, item.role);
   for (const block of blocks) {
     if (block.kind === "text") {
-      const text = document.createElement("div");
-      text.className = "turn-text";
-      text.textContent = block.text;
-      wrapper.append(text);
+      for (const seg of splitTableSegments(block.text)) {
+        if (seg.kind === "table") {
+          wrapper.append(renderMdTable(seg.text));
+        } else {
+          const text = document.createElement("div");
+          text.className = "turn-text";
+          text.textContent = seg.text;
+          wrapper.append(text);
+        }
+      }
     } else {
       wrapper.append(codeBlock(block.code, block.language, block.source));
     }
@@ -1415,6 +1478,7 @@ function renderFormattedContent(item: TranscriptItem): HTMLElement {
 }
 
 type FormattedBlock = { kind: "text"; text: string } | { kind: "code"; code: string; language: string; source: "fence" | "shell" | "role" };
+type TextSegment = { kind: "text"; text: string } | { kind: "table"; text: string };
 
 function splitCodeFences(content: string, role: string): FormattedBlock[] {
   const fenced = [...content.matchAll(/```([\w#+.-]*)[^\n]*\n([\s\S]*?)```/g)];
@@ -1530,3 +1594,4 @@ function elapsed(started: number): string { return `${Math.round(performance.now
 function value(id: string): string { return element<HTMLInputElement | HTMLSelectElement>(id).value.trim(); }
 function element<T extends HTMLElement>(id: string): T { const found = document.getElementById(id); if (!found) throw new Error(`Missing element ${id}`); return found as T; }
 function escapeHtml(text: string): string { return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;"); }
+function stripAnsi(text: string): string { return text.replace(new RegExp(String.fromCharCode(27) + "\\[[0-9;]*[A-Za-z]", "g"), ""); }
