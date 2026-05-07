@@ -29,6 +29,8 @@ let activeTab: "search" | "usage" | "session" = location.pathname.startsWith("/s
 let usageChart: ChartInstance | null = null;
 let turnChart: ChartInstance | null = null;
 let lastSearchRows: SearchResult[] = [];
+let currentPage = 1;
+let currentPageSize = 25;
 let currentSessionDetails: SessionDetails | null = null;
 let lastUsageResponse: UsageResponse | null = null;
 let selectedChatItem: SelectedChatItem | null = null;
@@ -266,7 +268,8 @@ async function runSearch(started: number): Promise<void> {
   }
   const mode = groupMode();
   if (mode === "none") {
-    target.append(searchTableNode(rows));
+    currentPage = 1;
+    target.replaceChildren(searchTableNode(rows, currentPage, currentPageSize));
     setStatus(`Search completed in ${elapsed(started)} and returned ${rows.length} sessions.`);
     return;
   }
@@ -301,27 +304,63 @@ async function runSession(started: number): Promise<void> {
   setStatus(`Session loaded in ${elapsed(started)}.`);
 }
 
-function searchTableNode(rows: SearchResult[]): HTMLElement {
+function renderSearchPage(): void {
+  element<HTMLDivElement>("results").replaceChildren(searchTableNode(lastSearchRows, currentPage, currentPageSize));
+}
+
+function searchTableNode(rows: SearchResult[], page: number, pageSize: number): HTMLElement {
   const table = document.createElement("div");
   table.className = "evidence-table";
   table.innerHTML = `<div class="evidence-grid evidence-header"><div>Agent</div><div>Task</div><div>Project</div><div>Relation</div><div class="sortable">Run time</div><div>Activity</div><div>Match</div><div>Actions</div></div>`;
-  const visibleRows = rows.slice(0, Math.min(rows.length, 4));
-  visibleRows.forEach((row, index) => {
-    table.append(searchResultNode(row, { featured: index === 1, index, rows }));
-    if (index === 1) table.append(detailDrawerNode(row, rows, index));
+  const body = document.createElement("div");
+  body.className = "evidence-body";
+  const startIndex = (page - 1) * pageSize;
+  const pageRows = rows.slice(startIndex, startIndex + pageSize);
+  const featuredLocalIndex = page === 1 ? 1 : -1;
+  pageRows.forEach((row, localIndex) => {
+    const globalIndex = startIndex + localIndex;
+    const isFeatured = localIndex === featuredLocalIndex;
+    body.append(searchResultNode(row, { featured: isFeatured, index: globalIndex, rows }));
+    if (isFeatured) body.append(detailDrawerNode(row, rows, globalIndex));
   });
-  table.append(tableFooterNode(rows.length));
+  table.append(body);
+  table.append(tableFooterNode(rows.length, page, pageSize));
   return table;
 }
 
-function tableFooterNode(totalRows: number): HTMLElement {
+function buildPageRange(page: number, totalPages: number): Array<number | "..."> {
+  if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
+  if (page <= 4) return [1, 2, 3, 4, 5, "...", totalPages];
+  if (page >= totalPages - 3) return [1, "...", totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+  return [1, "...", page - 1, page, page + 1, "...", totalPages];
+}
+
+function tableFooterNode(totalRows: number, page: number, pageSize: number): HTMLElement {
   const footer = document.createElement("div");
   footer.className = "table-footer";
-  const visibleEnd = Math.min(25, totalRows);
-  footer.innerHTML = `<div>Showing 1 to ${visibleEnd} of ${formatNumber(totalRows)} sessions</div><div class="pagination" aria-label="Pagination"><button class="page-button" type="button" aria-label="Previous page">‹</button><button class="page-button" type="button" aria-current="page">1</button><button class="page-button" type="button">2</button><button class="page-button" type="button">3</button><button class="page-button" type="button">4</button><button class="page-button" type="button">5</button><span class="page-ellipsis">…</span><button class="page-button" type="button">${Math.max(6, Math.ceil(Math.max(totalRows, 1) / 25))}</button><button class="page-button" type="button" aria-label="Next page">›</button></div><label class="visually-hidden" for="pageSizeSelect">Rows per page</label><select id="pageSizeSelect" class="page-size-select"><option value="25">25 / page</option><option value="50">50 / page</option><option value="100">100 / page</option></select>`;
+  const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+  const rangeStart = totalRows === 0 ? 0 : (page - 1) * pageSize + 1;
+  const rangeEnd = Math.min(page * pageSize, totalRows);
+  const pages = buildPageRange(page, totalPages);
+  const pageButtons = pages.map((p) => p === "..." ? `<span class="page-ellipsis">…</span>` : `<button class="page-button" type="button"${p === page ? ` aria-current="page"` : ""} data-page="${p}">${p}</button>`).join("");
+  footer.innerHTML = `<div>Showing ${rangeStart} to ${rangeEnd} of ${formatNumber(totalRows)} sessions</div><div class="pagination" aria-label="Pagination"><button class="page-button" type="button" aria-label="Previous page"${page <= 1 ? " disabled" : ""}>‹</button>${pageButtons}<button class="page-button" type="button" aria-label="Next page"${page >= totalPages ? " disabled" : ""}>›</button></div><label class="visually-hidden" for="pageSizeSelect">Rows per page</label><select id="pageSizeSelect" class="page-size-select"><option value="25"${pageSize === 25 ? " selected" : ""}>25 / page</option><option value="50"${pageSize === 50 ? " selected" : ""}>50 / page</option><option value="100"${pageSize === 100 ? " selected" : ""}>100 / page</option></select>`;
+  footer.querySelector<HTMLButtonElement>("[aria-label='Previous page']")?.addEventListener("click", () => {
+    if (currentPage > 1) { currentPage--; renderSearchPage(); }
+  });
+  footer.querySelector<HTMLButtonElement>("[aria-label='Next page']")?.addEventListener("click", () => {
+    if (currentPage < totalPages) { currentPage++; renderSearchPage(); }
+  });
+  footer.querySelectorAll<HTMLButtonElement>(".page-button[data-page]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const p = Number(btn.dataset.page);
+      if (!Number.isNaN(p) && p !== currentPage) { currentPage = p; renderSearchPage(); }
+    });
+  });
   footer.querySelector<HTMLSelectElement>("#pageSizeSelect")?.addEventListener("change", (event) => {
-    element<HTMLInputElement>("limit").value = (event.currentTarget as HTMLSelectElement).value;
-    void run();
+    currentPageSize = Number((event.currentTarget as HTMLSelectElement).value);
+    currentPage = 1;
+    element<HTMLInputElement>("limit").value = String(currentPageSize * 4);
+    renderSearchPage();
   });
   return footer;
 }
@@ -337,7 +376,7 @@ function searchResultNode(row: SearchResult, options: SearchResultRenderOptions 
   const relation = relationDisplay(row);
   const runtime = runtimeDisplay(row);
   const activity = activityMetrics(row);
-  item.innerHTML = `<div class="result-cell"><div class="agent-avatar agent-avatar--${row.provider}" title="${escapeHtml(row.provider)}">${escapeHtml(providerGlyph(row.provider))}</div></div><div class="result-cell task-cell"><a class="task-title" href="${sessionHref}">${escapeHtml(displayTitle(row))}</a><div class="task-subtitle">${escapeHtml(displaySubtitle(row))}</div></div><div class="result-cell project-cell"><div class="project-line"><span class="project-name">${escapeHtml(project)}</span><span class="mvp-chip">MVP</span></div></div><div class="result-cell relation-cell"><span class="relation-pill relation-pill--${relation.kind}">${escapeHtml(relation.label)}</span>${relation.subtext ? `<span class="relation-sub">${escapeHtml(relation.subtext)}</span>` : ""}</div><div class="result-cell runtime-cell"><span>${escapeHtml(runtime.date)}</span><span class="runtime-sub">${escapeHtml(runtime.time)} · ${escapeHtml(runtime.duration)}</span></div><div class="result-cell activity-cell"><span class="activity-metric"><span class="activity-number">${activity.tokens}</span><span class="activity-label">tokens</span></span><span class="activity-metric"><span class="activity-number">${activity.turns}</span><span class="activity-label">turns</span></span><span class="mini-bars" aria-hidden="true"><span></span><span></span><span></span></span><span class="activity-metric"><span class="activity-number">${activity.tools}</span><span class="activity-label">tools</span></span></div><div class="result-cell"><span class="match-pill">${matchScore(row)}</span></div><div class="result-cell actions-cell"><a class="table-action" data-action="open" href="${sessionHref}" aria-label="Open ${escapeHtml(displayTitle(row))}">↗</a><button class="table-action" data-action="pi" type="button" aria-label="Attach ${escapeHtml(displayTitle(row))} as Pi context">Pi</button><button class="table-action copy-action" data-action="copy" type="button" aria-label="Copy raw transcript path">⧉</button></div>`;
+  item.innerHTML = `<div class="result-cell"><div class="agent-avatar agent-avatar--${row.provider}" title="${escapeHtml(row.provider)}">${escapeHtml(providerGlyph(row.provider))}</div></div><div class="result-cell task-cell"><a class="task-title" href="${sessionHref}">${escapeHtml(displayTitle(row))}</a><div class="task-subtitle">${escapeHtml(displaySubtitle(row))}</div></div><div class="result-cell project-cell"><div class="project-line"><span class="project-name">${escapeHtml(project)}</span></div></div><div class="result-cell relation-cell"><span class="relation-pill relation-pill--${relation.kind}">${escapeHtml(relation.label)}</span>${relation.subtext ? `<span class="relation-sub">${escapeHtml(relation.subtext)}</span>` : ""}</div><div class="result-cell runtime-cell"><span>${escapeHtml(runtime.date)}</span><span class="runtime-sub">${escapeHtml(runtime.time)} · ${escapeHtml(runtime.duration)}</span></div><div class="result-cell activity-cell"><span class="activity-metric"><span class="activity-number">${activity.tokens}</span><span class="activity-label">tokens</span></span><span class="activity-metric"><span class="activity-number">${activity.turns}</span><span class="activity-label">turns</span></span><span class="mini-bars" aria-hidden="true"><span></span><span></span><span></span></span><span class="activity-metric"><span class="activity-number">${activity.tools}</span><span class="activity-label">tools</span></span></div><div class="result-cell"><span class="match-pill">${matchScore(row)}</span></div><div class="result-cell actions-cell"><a class="table-action" data-action="open" href="${sessionHref}" aria-label="Open ${escapeHtml(displayTitle(row))}">↗</a><button class="table-action" data-action="pi" type="button" aria-label="Attach ${escapeHtml(displayTitle(row))} as Pi context">Pi</button><button class="table-action copy-action" data-action="copy" type="button" aria-label="Copy raw transcript path">⧉</button></div>`;
   const selectResult = (): void => {
     document.querySelectorAll(".result--featured").forEach((node) => node.classList.remove("result--featured"));
     setSelectedChatItem({ kind: "session result", label: row.title ?? row.sessionId, data: summarizeSearchResult(row) });
@@ -414,7 +453,9 @@ function linkedCard(row: SearchResult): string {
 }
 
 function parentSessionTitle(row: SearchResult): string {
-  return row.parentTitle ?? row.groupLabel ?? displayTitle(row);
+  if (row.isSubagent) return row.parentTitle ?? row.groupLabel ?? "Parent session";
+  if (row.isBatch) return row.groupLabel ?? row.parentTitle ?? "Batch group";
+  return "None (primary session)";
 }
 
 function shortSessionId(sessionId: string): string {
@@ -445,7 +486,11 @@ function projectDisplay(row: SearchResult): string {
 }
 
 function relationDisplay(row: SearchResult): { kind: "primary" | "subagent" | "batch"; label: string; subtext: string } {
-  if (row.isSubagent) return { kind: "subagent", label: "subagent of", subtext: `${projectDisplay(row)} MVP` };
+  if (row.isSubagent) {
+    const parentLabel = row.groupLabel ?? row.parentTitle ?? null;
+    const parentProject = parentLabel ? truncateForContext(parentLabel.replace(/^Primary:\s*/iu, "").replace(/^\[[^\]]+\]\s*/u, "").replace(/^Task:\s*/iu, "").trim(), 28) : projectDisplay(row);
+    return { kind: "subagent", label: "subagent of", subtext: parentProject };
+  }
   if (row.isBatch) return { kind: "batch", label: "batch", subtext: row.startedAt ? `#${row.startedAt.slice(0, 10)}` : "batch run" };
   return { kind: "primary", label: "primary", subtext: "" };
 }
