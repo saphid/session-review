@@ -434,6 +434,13 @@ function detailDrawerNode(row: SearchResult, rows: SearchResult[] = lastSearchRo
     document.querySelectorAll(".result--featured,.selected-for-chat").forEach((node) => node.classList.remove("result--featured", "selected-for-chat"));
   });
   drawer.querySelector<HTMLButtonElement>('[data-action="drawer-copy"]')?.addEventListener("click", (event) => { event.stopPropagation(); void navigator.clipboard?.writeText(row.path); });
+  drawer.querySelectorAll<HTMLAnchorElement>(".linked-card").forEach((link) => {
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      history.pushState(null, "", link.pathname);
+      setTab("session");
+    });
+  });
   return drawer;
 }
 
@@ -461,7 +468,8 @@ function linkedRows(rows: SearchResult[], index: number, row: SearchResult): Sea
 function linkedCard(row: SearchResult): string {
   const relation = relationDisplay(row);
   const runtime = runtimeDisplay(row);
-  return `<div class="linked-card"><div class="agent-avatar agent-avatar--${row.provider}">${escapeHtml(providerGlyph(row.provider))}</div><div><div class="linked-title">${escapeHtml(displayTitle(row))}</div><div class="linked-sub">${escapeHtml(runtime.date)}${runtime.time !== "unknown" ? `, ${escapeHtml(runtime.time)}` : ""}</div></div><span class="relation-pill relation-pill--${relation.kind}">${escapeHtml(relation.label)}</span></div>`;
+  const href = `/session/${encodeURIComponent(row.sessionId)}`;
+  return `<a class="linked-card" href="${href}" aria-label="Open linked session ${escapeHtml(displayTitle(row))}"><div class="agent-avatar agent-avatar--${row.provider}">${escapeHtml(providerGlyph(row.provider))}</div><div><div class="linked-title">${escapeHtml(displayTitle(row))}</div><div class="linked-sub">${escapeHtml(runtime.date)}${runtime.time !== "unknown" ? `, ${escapeHtml(runtime.time)}` : ""}</div></div><span class="relation-pill relation-pill--${relation.kind}">${escapeHtml(relation.label)}</span></a>`;
 }
 
 function parentSessionTitle(row: SearchResult): string {

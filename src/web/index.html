@@ -301,7 +301,8 @@
       .bar-count, .skill-count { color:#dce3ee; text-align:right; font-size:13px; }
       .skill-row { display:grid; grid-template-columns:max-content 1fr; gap:10px; align-items:center; }
       .skill-chip { max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:8px 12px; border:1px solid rgba(132,148,180,.18); border-radius:5px; background:rgba(255,255,255,.055); color:#d7deeb; font-size:13px; }
-      .linked-card { display:grid; grid-template-columns:38px minmax(0,1fr) max-content; gap:10px; align-items:center; padding:8px; border:1px solid rgba(132,148,180,.14); border-radius:5px; background:rgba(255,255,255,.04); }
+      .linked-card { display:grid; grid-template-columns:38px minmax(0,1fr) max-content; gap:10px; align-items:center; padding:8px; border:1px solid rgba(132,148,180,.14); border-radius:5px; background:rgba(255,255,255,.04); color:inherit; text-decoration:none; cursor:pointer; }
+      .linked-card:hover, .linked-card:focus-visible { border-color:rgba(124,156,255,.52); background:rgba(124,156,255,.08); }
       .linked-card .agent-avatar { width:34px; height:34px; border-radius:5px; font-size:12px; }
       .linked-title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#eef3fa; font-size:13px; }
       .linked-sub { color:#aeb6c6; font-size:12px; }
