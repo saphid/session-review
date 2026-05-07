@@ -351,9 +351,11 @@ function tableFooterNode(totalRows: number, page: number, pageSize: number): HTM
   const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
   const rangeStart = totalRows === 0 ? 0 : (page - 1) * pageSize + 1;
   const rangeEnd = Math.min(page * pageSize, totalRows);
+  const queryLimit = parseInt(value("limit"), 10) || 100;
+  const totalDisplay = totalRows >= queryLimit ? `${formatNumber(totalRows)}+` : formatNumber(totalRows);
   const pages = buildPageRange(page, totalPages);
   const pageButtons = pages.map((p) => p === "..." ? `<span class="page-ellipsis">…</span>` : `<button class="page-button" type="button"${p === page ? ` aria-current="page"` : ""} data-page="${p}">${p}</button>`).join("");
-  footer.innerHTML = `<div>Showing ${rangeStart} to ${rangeEnd} of ${formatNumber(totalRows)} sessions</div><div class="pagination" aria-label="Pagination"><button class="page-button" type="button" aria-label="Previous page"${page <= 1 ? " disabled" : ""}>‹</button>${pageButtons}<button class="page-button" type="button" aria-label="Next page"${page >= totalPages ? " disabled" : ""}>›</button></div><label class="visually-hidden" for="pageSizeSelect">Rows per page</label><select id="pageSizeSelect" class="page-size-select"><option value="25"${pageSize === 25 ? " selected" : ""}>25 / page</option><option value="50"${pageSize === 50 ? " selected" : ""}>50 / page</option><option value="100"${pageSize === 100 ? " selected" : ""}>100 / page</option></select>`;
+  footer.innerHTML = `<div>Showing ${rangeStart} to ${rangeEnd} of ${totalDisplay} sessions</div><div class="pagination" aria-label="Pagination"><button class="page-button" type="button" aria-label="Previous page"${page <= 1 ? " disabled" : ""}>‹</button>${pageButtons}<button class="page-button" type="button" aria-label="Next page"${page >= totalPages ? " disabled" : ""}>›</button></div><label class="visually-hidden" for="pageSizeSelect">Rows per page</label><select id="pageSizeSelect" class="page-size-select"><option value="25"${pageSize === 25 ? " selected" : ""}>25 / page</option><option value="50"${pageSize === 50 ? " selected" : ""}>50 / page</option><option value="100"${pageSize === 100 ? " selected" : ""}>100 / page</option></select>`;
   footer.querySelector<HTMLButtonElement>("[aria-label='Previous page']")?.addEventListener("click", () => {
     if (currentPage > 1) { currentPage--; renderSearchPage(); }
   });
@@ -443,11 +445,11 @@ function usageRows(row: SearchResult, kind: "tool" | "skill"): Array<{ name: str
 
 function barRow(entry: { name: string; count: number }): string {
   const width = Math.max(18, Math.min(100, entry.count * 9));
-  return `<div class="bar-row"><span class="bar-name">${escapeHtml(entry.name)}</span><span class="bar-track"><span class="bar-fill" style="width:${width}%"></span></span><span class="bar-count">${entry.count}</span></div>`;
+  return `<div class="bar-row"><span class="bar-name" title="${escapeHtml(entry.name)}">${escapeHtml(humanizeName(entry.name))}</span><span class="bar-track"><span class="bar-fill" style="width:${width}%"></span></span><span class="bar-count">${entry.count}</span></div>`;
 }
 
 function skillRow(entry: { name: string; count: number }): string {
-  return `<div class="skill-row"><span class="skill-chip">${escapeHtml(entry.name)}</span><span class="skill-count">${entry.count}</span></div>`;
+  return `<div class="skill-row"><span class="skill-chip" title="${escapeHtml(entry.name)}">${escapeHtml(humanizeName(entry.name))}</span><span class="skill-count">${entry.count}</span></div>`;
 }
 
 function linkedRows(rows: SearchResult[], index: number, row: SearchResult): SearchResult[] {
@@ -719,7 +721,7 @@ async function sendPiChat(): Promise<void> {
     activeChat().history.push({ role: "assistant", content: reply });
     persistPiChats();
     updateChatSessionPill();
-    setPiStatus(`${result.message} ${result.continued ? "Continued" : "Started"} Pi session ${result.chatId.slice(0, 8)}. Attached ${result.attachedFiles.length} source files. Context: ${result.contextPath}`);
+    setPiStatus(`${result.continued ? "Continued" : "Started"} Pi session ${result.chatId.slice(0, 8)}. Attached ${result.attachedFiles.length} source file${result.attachedFiles.length === 1 ? "" : "s"}.`);
   } catch (error) {
     typing.remove();
     const text = piChatErrorText(error);
@@ -740,12 +742,10 @@ function piChatErrorText(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error);
   const parsed = parseJsonObject(raw);
   const message = (stringField(parsed, "message") || raw).replace(/[.\s]+$/, "");
-  const contextPath = stringField(parsed, "contextPath");
   const attachedFiles = arrayField(parsed, "attachedFiles");
   const retryHint = message.includes("timed out") ? " Try unchecking full transcript files in the source dropdown, then send again." : " Check the local Pi process, then try again.";
   const sourceCount = attachedFiles ? ` Attached ${attachedFiles.length} source file${attachedFiles.length === 1 ? "" : "s"}.` : "";
-  const context = contextPath ? ` Context: ${contextPath}` : "";
-  return `Pi could not answer from the attached sources. ${message}.${retryHint}${sourceCount}${context}`;
+  return `Pi could not answer from the attached sources. ${message}.${retryHint}${sourceCount}`;
 }
 
 function parseJsonObject(value: string): Record<string, unknown> | null {
@@ -1032,7 +1032,7 @@ function updateSourceChips(): void {
   const viewLabel = activeTab === "session" ? "Session" : activeTab === "usage" ? "Usage" : "Search";
   const chips: HTMLElement[] = [sourceChip(viewLabel)];
   chips.push(sourceFilePicker(availableFiles, files));
-  if (currentSessionDetails) chips.push(sourceChip(`session: ${truncateForContext(currentSessionDetails.title ?? currentSessionDetails.sessionId, 42)}`));
+  if (currentSessionDetails) chips.push(sourceChip(currentSessionDetails.title ?? currentSessionDetails.sessionId));
   if (selectedChatItem) chips.push(sourceChip(`selected: ${truncateForContext(selectedChatItem.label, 42)}`, () => setSelectedChatItem(null)));
   target.replaceChildren(...chips);
 }
@@ -1124,7 +1124,7 @@ function sourceNoteNode(): HTMLElement {
   const files = relatedFiles();
   note.append(sourceChip(`${files.length} attached source${files.length === 1 ? "" : "s"}`));
   if (selectedChatItem) note.append(sourceChip(`selected ${selectedChatItem.kind}: ${truncateForContext(selectedChatItem.label, 42)}`));
-  if (currentSessionDetails) note.append(sourceChip(`session ${currentSessionDetails.sessionId.slice(0, 8)}`));
+  if (currentSessionDetails) note.append(sourceChip(currentSessionDetails.title ?? currentSessionDetails.sessionId.slice(0, 8)));
   return note;
 }
 
@@ -1566,7 +1566,10 @@ function estimateTokens(text: string): number {
 }
 
 function formatNumber(value: number): string { return value.toLocaleString("en-US"); }
-function humanizeName(name: string): string { return name.replace(/[_:]/g, " ").trim().replace(/\s+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()); }
+function humanizeName(name: string): string {
+  const acronyms = new Set(["tsc", "api", "sql", "url", "uuid", "http", "https", "css", "html", "json", "id", "ui"]);
+  return name.replace(/[_:]/g, " ").trim().replace(/\s+/g, " ").split(" ").map((w) => acronyms.has(w.toLowerCase()) ? w.toUpperCase() : w.replace(/^\w/, (c) => c.toUpperCase())).join(" ");
+}
 
 function usageChartConfig(points: UsagePoint[], names: string[]): ChartConfig {
   const labels = [...new Set(points.map((point) => point.bucket))].sort();

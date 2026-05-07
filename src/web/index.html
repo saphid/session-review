@@ -126,7 +126,7 @@
       .source-picker > summary { list-style:none; cursor:pointer; border:1px solid rgba(126,145,190,.3); border-radius:0; padding:2px 6px; color:#e4e9f8; background:rgba(8,11,18,.72); }
       .source-picker > summary::-webkit-details-marker { display:none; }
       .source-picker[open] > summary { border-color:rgba(124,156,255,.64); box-shadow:var(--focus); }
-      .source-picker-panel { position:absolute; left:0; z-index:8; width:min(420px, calc(100vw - 28px)); max-height:min(460px, calc(100vh - 190px)); overflow:auto; margin-top:4px; padding:8px; border:1px solid rgba(124,156,255,.38); border-radius:0; background:#0d111a; box-shadow:0 16px 34px rgba(0,0,0,.36); }
+      .source-picker-panel { position:absolute; left:0; z-index:8; width:min(400px, calc(100vw - 28px)); max-width:calc(var(--pi-sidebar-width, 320px) - 18px); max-height:min(460px, calc(100vh - 190px)); overflow:auto; margin-top:4px; padding:8px; border:1px solid rgba(124,156,255,.38); border-radius:0; background:#0d111a; box-shadow:0 16px 34px rgba(0,0,0,.36); }
       .source-picker-panel p { margin:0 0 8px; font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,sans-serif; }
       .source-picker-actions { display:flex; gap:6px; margin-bottom:8px; }
       .source-file-list { display:grid; gap:3px; }
@@ -230,6 +230,7 @@
       .results-panel, #usagePanel, #sessionPanel { padding:0; overflow:auto; min-height:0; }
       .results-panel { display:flex; flex-direction:column; overflow:hidden; border-color:rgba(132,148,180,.24); }
       #searchPanel .panel-heading { display:none; }
+      #sessionPanel .panel-heading { display:none; }
       .panel-heading { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:12px 14px; border-bottom:1px solid var(--chrome-border); }
       .panel-heading h2 { margin:0; color:#c9d0dc; font-size:12px; letter-spacing:.06em; text-transform:uppercase; }
       #statusLine { margin:0; color:#a2abba; font-size:12px; }
@@ -378,7 +379,7 @@
       .mobile-nav-toggle:hover { transform:none; filter:brightness(1.15); }
       .nav-item:disabled { opacity:.45; cursor:not-allowed; }
       .col-sorted::after { content:" \2193"; color:#8b94a8; font-size:10px; }
-      @media (max-width: 720px) { .page-toolbar { align-items:flex-start; flex-direction:column; } .top-controls { width:100%; justify-content:stretch; } .filter-toggle, .top-control, .top-search { flex:1 1 100%; width:100%; } .filter-primary { grid-template-columns:1fr; } .mobile-nav-toggle { display:grid; place-items:center; } .left-sidebar { grid-template-rows:auto; padding:8px 12px 10px; } .side-nav, .sidebar-bottom { display:none; } body.mobile-nav-open .left-sidebar { position:fixed; inset:0; z-index:20; height:100vh; overflow-y:auto; padding-bottom:24px; grid-template-rows:auto 1fr auto; } body.mobile-nav-open .side-nav { display:grid; } body.mobile-nav-open .sidebar-bottom { display:grid; } .main-cockpit { height:auto; min-height:calc(100vh - 60px); overflow:visible; } .content-stack { height:auto; } #results { overflow-x:auto; } .evidence-table { min-width:900px; } .search-key { display:none; } }
+      @media (max-width: 720px) { .page-toolbar { align-items:flex-start; flex-direction:column; } .top-controls { width:100%; justify-content:stretch; } .filter-toggle, .top-control, .top-search { flex:1 1 100%; width:100%; } .filter-primary { grid-template-columns:1fr; } .mobile-nav-toggle { display:grid; place-items:center; } .left-sidebar { grid-template-rows:auto; padding:8px 12px 10px; } .side-nav, .sidebar-bottom { display:none; } body.mobile-nav-open .left-sidebar { position:fixed; inset:0; z-index:20; height:100vh; overflow-y:auto; padding-bottom:24px; grid-template-rows:auto 1fr auto; } body.mobile-nav-open .side-nav { display:grid; } body.mobile-nav-open .sidebar-bottom { display:grid; } .main-cockpit { height:auto; min-height:calc(100vh - 60px); overflow:visible; } .content-stack { height:auto; } #results { overflow-x:auto; } .evidence-table { min-width:900px; } .search-key { display:none; } .drawer-top { grid-template-columns:1fr 1fr; gap:10px; } .drawer-columns { grid-template-columns:1fr 1fr; } .drawer-column + .drawer-column { padding-left:10px; border-left:0; border-top:1px solid rgba(132,148,180,.12); padding-top:10px; } }
     </style>
   </head>
   <body>
