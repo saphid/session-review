@@ -98,7 +98,7 @@ const mobile = await browser.newPage({ viewport: { width: 390, height: 900 }, de
 await mobile.goto(`${baseUrl}/?limit=25`);
 await waitForSearch(mobile);
 await capture("11-mobile-sessions", "Mobile/narrow viewport Sessions screen.", mobile);
-await mobile.getByRole("button", { name: "Open navigation" }).click();
+await mobile.getByRole("button", { name: "Toggle navigation" }).click();
 await capture("12-mobile-nav-open", "Mobile/narrow viewport with navigation drawer open.", mobile);
 await mobile.close();
 
