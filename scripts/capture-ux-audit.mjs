@@ -31,7 +31,7 @@ async function waitForSearch() {
 }
 
 async function waitForSession() {
-  await page.getByRole("heading", { name: "Transcript", exact: true }).waitFor({ timeout: 20_000 });
+  await page.locator("#transcript .turn-card").first().waitFor({ timeout: 20_000 });
 }
 
 async function shot(name, description, options = {}) {
