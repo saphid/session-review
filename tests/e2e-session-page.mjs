@@ -19,7 +19,12 @@ const browser = await chromium.launch({
 const page = await browser.newPage({ viewport: { width: 1440, height: 1200 } });
 
 await page.goto(`${baseUrl}/?query=chat.json&limit=20`);
-await page.getByText("Search completed", { exact: false }).waitFor({ timeout: 15_000 });
+await page.waitForFunction(
+  () => document.querySelector("#statusLine")?.textContent?.includes("Search completed"),
+  null,
+  { timeout: 15_000 },
+);
+await page.locator(".evidence-table").waitFor({ timeout: 15_000 });
 await page.screenshot({ path: new URL("search-e2e.png", outDir).pathname, fullPage: true });
 
 await page.goto(`${baseUrl}/session/${encodeURIComponent(sessionId)}`);
