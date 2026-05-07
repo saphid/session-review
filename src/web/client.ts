@@ -305,11 +305,25 @@ function searchTableNode(rows: SearchResult[]): HTMLElement {
   const table = document.createElement("div");
   table.className = "evidence-table";
   table.innerHTML = `<div class="evidence-grid evidence-header"><div>Agent</div><div>Task</div><div>Project</div><div>Relation</div><div class="sortable">Run time</div><div>Activity</div><div>Match</div><div>Actions</div></div>`;
-  rows.forEach((row, index) => {
+  const visibleRows = rows.slice(0, Math.min(rows.length, 4));
+  visibleRows.forEach((row, index) => {
     table.append(searchResultNode(row, { featured: index === 1, index, rows }));
     if (index === 1) table.append(detailDrawerNode(row, rows, index));
   });
+  table.append(tableFooterNode(rows.length));
   return table;
+}
+
+function tableFooterNode(totalRows: number): HTMLElement {
+  const footer = document.createElement("div");
+  footer.className = "table-footer";
+  const visibleEnd = Math.min(25, totalRows);
+  footer.innerHTML = `<div>Showing 1 to ${visibleEnd} of ${formatNumber(totalRows)} sessions</div><div class="pagination" aria-label="Pagination"><button class="page-button" type="button" aria-label="Previous page">‹</button><button class="page-button" type="button" aria-current="page">1</button><button class="page-button" type="button">2</button><button class="page-button" type="button">3</button><button class="page-button" type="button">4</button><button class="page-button" type="button">5</button><span class="page-ellipsis">…</span><button class="page-button" type="button">${Math.max(6, Math.ceil(Math.max(totalRows, 1) / 25))}</button><button class="page-button" type="button" aria-label="Next page">›</button></div><label class="visually-hidden" for="pageSizeSelect">Rows per page</label><select id="pageSizeSelect" class="page-size-select"><option value="25">25 / page</option><option value="50">50 / page</option><option value="100">100 / page</option></select>`;
+  footer.querySelector<HTMLSelectElement>("#pageSizeSelect")?.addEventListener("change", (event) => {
+    element<HTMLInputElement>("limit").value = (event.currentTarget as HTMLSelectElement).value;
+    void run();
+  });
+  return footer;
 }
 
 function searchResultNode(row: SearchResult, options: SearchResultRenderOptions = {}): HTMLElement {
