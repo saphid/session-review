@@ -95,6 +95,15 @@ element<HTMLTextAreaElement>("piPrompt").addEventListener("keydown", (event) => 
     void sendPiChat();
   }
 });
+const mobileNavToggle = document.getElementById("mobileNavToggle") as HTMLButtonElement | null;
+mobileNavToggle?.addEventListener("click", () => {
+  const open = document.body.classList.toggle("mobile-nav-open");
+  mobileNavToggle.setAttribute("aria-expanded", String(open));
+});
+document.querySelector<HTMLElement>(".side-nav")?.addEventListener("click", () => {
+  if (window.innerWidth <= 720) { document.body.classList.remove("mobile-nav-open"); mobileNavToggle?.setAttribute("aria-expanded", "false"); }
+});
+document.querySelectorAll<HTMLButtonElement>(".nav-item[disabled], .settings-quick[disabled]").forEach((btn) => { if (!btn.title) btn.title = "Coming soon"; });
 window.addEventListener("popstate", () => {
   activeTab = location.pathname.startsWith("/session/") ? "session" : activeTab === "session" ? "search" : activeTab;
   syncPanels();
@@ -256,7 +265,8 @@ async function runSearch(started: number): Promise<void> {
   updatePiContextPreview();
   const target = element<HTMLDivElement>("results");
   target.replaceChildren();
-  sessionsNavCount.textContent = formatNumber(rows.length);
+  const queryLimit = parseInt(value("limit"), 10) || 100;
+  sessionsNavCount.textContent = rows.length >= queryLimit ? `${formatNumber(rows.length)}+` : formatNumber(rows.length);
   if (!rows.length) {
     if (hasSearchConstraints()) {
       target.replaceChildren(emptyStateNode("No sessions match these filters.", "Clear filters or broaden the query, then run the search again.", [{ label: "Clear filters", action: () => { clearFilters(); void run(); } }]));
@@ -1492,10 +1502,11 @@ function estimateTokens(text: string): number {
 }
 
 function formatNumber(value: number): string { return value.toLocaleString("en-US"); }
+function humanizeName(name: string): string { return name.replace(/[_:]/g, " ").trim().replace(/\s+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()); }
 
 function usageChartConfig(points: UsagePoint[], names: string[]): ChartConfig {
   const labels = [...new Set(points.map((point) => point.bucket))].sort();
-  return { type: "bar", data: { labels, datasets: names.map((name, index) => ({ label: name, data: labels.map((label) => points.find((point) => point.bucket === label && point.name === name)?.count ?? 0), backgroundColor: palette(index) })) }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true, position: "bottom" }, tooltip: { enabled: true } }, scales: { x: { title: { display: true, text: "Time bucket" }, stacked: false }, y: { title: { display: true, text: "Uses" }, beginAtZero: true } } } };
+  return { type: "bar", data: { labels, datasets: names.map((name, index) => ({ label: humanizeName(name), data: labels.map((label) => points.find((point) => point.bucket === label && point.name === name)?.count ?? 0), backgroundColor: palette(index) })) }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true, position: "bottom", labels: { color: "#9aa4b6", font: { size: 11 } } }, tooltip: { enabled: true } }, scales: { x: { ticks: { maxTicksLimit: 12, maxRotation: 45, minRotation: 20, color: "#8b94a8", font: { size: 11 } }, grid: { color: "rgba(132,148,180,.07)" } }, y: { type: "logarithmic", title: { display: true, text: "Uses", color: "#8b94a8", font: { size: 11 } }, ticks: { color: "#8b94a8", font: { size: 11 } }, grid: { color: "rgba(132,148,180,.07)" } } } } };
 }
 
 function turnChartConfig(items: TranscriptItem[]): ChartConfig {
@@ -1507,7 +1518,7 @@ function highlightTurn(index: number): void { document.querySelectorAll(".turn-c
 function palette(index: number): string { return `hsl(${(index * 47) % 360} 75% 62%)`; }
 function cssRole(role: string): string { return role.toLowerCase().replace(/[^a-z0-9_-]/g, ""); }
 
-function drawUsageTable(rows: UsageSummaryRow[], target: HTMLDivElement): void { if (!rows.length) { target.replaceChildren(emptyStateNode("No usage signals found.", "Try a broader query, switch signal type, or ingest sessions that include tool and skill activity.")); return; } target.innerHTML = `<table><thead><tr><th>Name</th><th>Uses</th><th>Sessions</th></tr></thead><tbody>${rows.slice(0, 100).map((row) => `<tr><td>${escapeHtml(row.name)}</td><td>${row.count}</td><td>${row.sessions}</td></tr>`).join("")}</tbody></table>`; }
+function drawUsageTable(rows: UsageSummaryRow[], target: HTMLDivElement): void { if (!rows.length) { target.replaceChildren(emptyStateNode("No usage signals found.", "Try a broader query, switch signal type, or ingest sessions that include tool and skill activity.")); return; } target.innerHTML = `<table><thead><tr><th>Name</th><th class="col-sorted">Uses</th><th>Sessions</th></tr></thead><tbody>${rows.slice(0, 100).map((row) => `<tr><td title="${escapeHtml(row.name)}">${escapeHtml(humanizeName(row.name))}</td><td>${formatNumber(row.count)}</td><td>${formatNumber(row.sessions)}</td></tr>`).join("")}</tbody></table>`; }
 function renderLinked(rows: SearchResult[], target: HTMLDivElement): void { if (!rows.length) { target.replaceChildren(emptyStateNode("No linked sessions found.", "No explicit subagent or same-run sessions are attached to this transcript.")); return; } target.innerHTML = rows.map((row) => `<div class="result"><a href="/session/${encodeURIComponent(row.sessionId)}">[${escapeHtml(row.provider)}] ${escapeHtml(row.title ?? "Untitled")}</a><div class="muted">${escapeHtml(row.reason ?? "linked")} · ${escapeHtml(row.startedAt ?? "unknown")} · ${escapeHtml(row.path)}</div></div>`).join(""); target.querySelectorAll("a").forEach((link) => link.addEventListener("click", (event) => { event.preventDefault(); history.pushState(null, "", (event.currentTarget as HTMLAnchorElement).pathname); setTab("session"); })); }
 function params(): URLSearchParams { const query = new URLSearchParams(); for (const key of ["query", "provider", "cwd", "startDate", "endDate", "batchMode", "limit"] as const) { const val = value(key); if (val) query.set(key, val); } const pathFilter = value("pathFilter"); if (pathFilter) query.set("path", pathFilter); return query; }
 function groupMode(): GroupMode { const raw = value("groupBy"); return raw === "cwd" || raw === "provider" || raw === "primary" ? raw : "none"; }
