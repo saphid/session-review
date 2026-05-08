@@ -1,5 +1,6 @@
 import "server-only";
 
+import { cache } from "react";
 import { getDb } from "./db";
 
 /**
@@ -17,7 +18,10 @@ export interface SessionsCountSummary {
   label: string;
 }
 
-export function getSessionsCount(): SessionsCountSummary {
+// Memoize per-request: the sidebar renders both desktop and mobile-drawer
+// badges, both of which call this. `cache()` ensures one DB hit per request
+// across server components.
+export const getSessionsCount = cache((): SessionsCountSummary => {
   try {
     const db = getDb();
     const row = db
@@ -28,9 +32,12 @@ export function getSessionsCount(): SessionsCountSummary {
       total,
       label: total > 100 ? "100+" : String(total),
     };
-  } catch {
+  } catch (error) {
     // The shell renders on every route; if the DB isn't ready yet we
     // fall back to a calm placeholder rather than 500-ing the layout.
+    if (process.env.NODE_ENV !== "production") {
+      console.warn("[sessions-count] db read failed:", error);
+    }
     return { total: 0, label: "0" };
   }
-}
+});
