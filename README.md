@@ -1,6 +1,6 @@
 # Session Review
 
-Tiny local-first TypeScript CLI for ingesting AI coding agent sessions into SQLite FTS and querying them.
+Local-first tool that ingests AI coding-agent session transcripts into SQLite/FTS and lets you query them from a CLI or a Next.js web app.
 
 Supported MVP sources:
 
@@ -9,53 +9,80 @@ Supported MVP sources:
 - Codex CLI: `~/.codex/sessions/**/*.jsonl`
 - Cursor readable/exported sessions: `$CURSOR_SESSION_ROOT`, `~/.cursor/session-review`, `~/.cursor/sessions`
 
-## Usage
+## Layout
+
+```
+src/        # data layer + CLI (better-sqlite3, FTS, providers, analytics)
+apps/web/   # Next.js 15 App Router app (search, session detail, tools)
+```
+
+The CLI and the web app share the same SQLite database. `SESSION_REVIEW_DB`
+overrides the default path (`$HOME/.local/share/session-review/sessions.sqlite`).
+
+## CLI
 
 ```bash
 npm install
-npm run build
-npm start -- ingest
-npm start -- search "sqlite FTS"
-npm start -- status
-npm run derive
-npm run app
+npm start -- ingest        # walk known provider roots and upsert sessions
+npm start -- search "test" # FTS query against indexed bodies
+npm start -- status        # row counts per provider
+npm run derive             # rebuild tool/skill analytics for indexed sessions
 ```
 
-Override DB path:
+Override the DB path:
 
 ```bash
 npm start -- --db /tmp/sessions.sqlite search "auth"
 ```
 
-## Web app (Next.js)
-
-The web app is a Next.js 15 (App Router) project at `apps/web/`.
-
-```bash
-npm run dev   # next dev on http://localhost:8765 (development)
-npm run app   # next start on http://localhost:8765 (after `npm run build`)
-```
-
-If you are launching from another directory, use either a one-line `cd` or npm's prefix flag so npm finds this project's `package.json`:
-
-```bash
-cd /Users/alexsouthwell/Personal/Projects/session-review && PORT=8999 npm run dev
-# or
-PORT=8999 npm --prefix /Users/alexsouthwell/Personal/Projects/session-review run dev
-```
-
-The app supports session search, provider/cwd/path/date filters, grouping by working directory, agent/provider, or primary session + subagents, syntax-highlighted transcript code blocks/shell output, model input/output badges, per-turn estimated token counts, transcript expand/collapse controls by item or item type, a configurable default transcript line limit with per-item “show more”, a right-hand Pi chat sidebar, and tool/skill usage charts over time. Use the `Batch runs` filter to include all sessions, exclude likely batch/orchestration/subagent sessions, or show only those batch sessions. The primary-session grouping detects Pi nested `run-*` sessions and Claude `subagents/` sidechains, linking them to indexed parent logs when available and otherwise grouping them under a synthetic primary key from the path.
-
-The Pi chat sidebar writes a screen-context JSON bundle under `output/pi-chat/` and calls `pi --print --thinking xhigh --session-dir output/pi-chat-sessions/<chat-id> --continue` after the first message, so follow-up questions share a persistent high-quality Pi session. Each turn attaches the current screen context plus the full contents of every transcript/source file loaded for the current screen. Click a search result, group, or transcript turn to attach it as the selected item chip for the next chat message. The visual design follows the ChatGPT image-generation mockup direction: dark developer cockpit, polished glass panels, blue/purple accents, and Cursor/VS Code-style chat ergonomics. Override the Pi binary with `SESSION_REVIEW_PI_BIN`.
-
-Run this after large ingests or code changes to rebuild tool/skill analytics for already-indexed sessions:
-
-```bash
-npm run derive
-```
-
-## Cursor exports
+Cursor exports:
 
 ```bash
 CURSOR_SESSION_ROOT=/path/to/cursor/exports npm start -- ingest --provider cursor
 ```
+
+## Web app (Next.js)
+
+```bash
+npm run dev    # next dev on http://localhost:8765
+npm run build  # next build apps/web && tsc (CLI dist)
+npm run app    # next start on http://localhost:8765 (after build)
+```
+
+If you launch from another directory, use `cd` or npm's `--prefix` so npm
+finds this project's `package.json`:
+
+```bash
+cd /path/to/session-review && PORT=8999 npm run dev
+# or
+PORT=8999 npm --prefix /path/to/session-review run dev
+```
+
+The web app supports session search with FTS scoring, provider/cwd/path/date
+filters, primary/subagent/batch grouping, syntax-highlighted transcript code
+blocks, per-turn estimated token counts, transcript expand/collapse controls,
+a configurable default lines-per-turn limit, a right-hand Pi chat sidebar, and
+tool/skill usage charts with click-through drill-down to filtered search.
+
+The Pi chat sidebar writes a screen-context JSON bundle under `output/pi-chat/`
+and calls `pi --print --thinking xhigh --session-dir output/pi-chat-sessions/<chat-id> --continue`
+after the first message, so follow-up questions share a persistent Pi
+session. Each turn attaches the current screen context plus the contents of
+every transcript/source file loaded for the current screen. Override the Pi
+binary with `SESSION_REVIEW_PI_BIN`.
+
+## Quality gates
+
+```bash
+npm run lint              # eslint src + apps/web
+npm run check             # tsc --noEmit (root + apps/web)
+npm run test:integration  # tsx --test against the fixture DB
+npm run e2e:web           # Playwright suite (boots next dev on :8765)
+```
+
+## Principles
+
+- Raw session files are the source of truth.
+- SQLite is a rebuildable local index.
+- Keep the MVP simple: ingest pi, Claude, Codex, and Cursor exports; search with FTS.
+- Redaction is not a v1 requirement. Later exposure detection can be added as a derived scan.

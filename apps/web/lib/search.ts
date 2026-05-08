@@ -9,10 +9,9 @@ const MAX_SEARCH_LIMIT = 500;
 
 /**
  * Parses the URLSearchParams of an `/api/search` request into a `SessionFilters`
- * object the data layer accepts. Mirrors the legacy server in
- * `src/legacy-server.ts` so the bridge keeps the same query contract.
+ * object the data layer accepts.
  *
- * Sort/dir come straight from the URL (T18). Only the allowlisted values are
+ * Sort/dir come straight from the URL. Only the allowlisted values are
  * recognized — anything else falls back to `null` so `searchFilteredSessions`
  * uses its default ordering. The SQL itself never substitutes user-controlled
  * strings into ORDER BY (see `noQueryOrderBy`/`queryOrderBy` in `src/db.ts`).

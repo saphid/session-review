@@ -38,6 +38,10 @@ export default defineConfig({
     stderr: "pipe",
     env: {
       SESSION_REVIEW_DB: process.env.SESSION_REVIEW_DB ?? fixtureDb,
+      // Next.js anonymous telemetry can block dev-server startup on some
+      // hosts (the prompt sequence stalls stdin/stdout). Disable it for
+      // the e2e webServer so tests start consistently.
+      NEXT_TELEMETRY_DISABLED: "1",
     },
   },
 });

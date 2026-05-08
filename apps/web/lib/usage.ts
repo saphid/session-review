@@ -10,8 +10,7 @@ const SIXTY_DAYS_MS = 60 * 24 * 60 * 60 * 1000;
 
 /**
  * Parses /api/usage URL search params into the kind+bucket+filters tuple the
- * data layer expects. Mirrors `src/legacy-server.ts:51` so the contract holds
- * across both servers while the legacy app still ships.
+ * data layer expects.
  */
 export function parseUsageRequest(params: URLSearchParams): {
   kind: UsageKind;

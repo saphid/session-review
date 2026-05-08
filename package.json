@@ -7,7 +7,7 @@
     "session-review": "./dist/cli.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "next build apps/web && tsc",
     "check": "tsc --noEmit && tsc --noEmit -p apps/web/tsconfig.json",
     "start": "tsx src/cli.ts",
     "ingest": "tsx src/cli.ts ingest --all",
@@ -16,7 +16,6 @@
     "dev": "next dev apps/web -p 8765",
     "app": "next start apps/web -p 8765",
     "derive": "tsx src/cli.ts derive",
-    "e2e:screenshots": "node tests/e2e-session-page.mjs",
     "e2e:web": "playwright test --config apps/web/playwright.config.ts",
     "fixture:build": "tsx apps/web/tests/fixtures/build-fixture.ts",
     "test:integration": "npm run fixture:build && tsx --conditions=react-server --test apps/web/tests/integration/*.test.ts"

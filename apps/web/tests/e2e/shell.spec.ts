@@ -52,15 +52,27 @@ test.describe("App shell — desktop", () => {
     });
     const brand = sidebar.getByRole("link", { name: "Session Review home" });
 
-    // Trigger focus-visible via keyboard navigation.
-    await page.keyboard.press("Tab");
+    // Reset focus to the document body. Without this, focus may have
+    // landed on the Next.js dev-tools floating button (a portal-rendered
+    // <button> outside the app shell) earlier in the suite, which would
+    // make the first Tab press skip our brand link.
+    await page.locator("body").click({ position: { x: 1, y: 1 } });
 
-    const focusedHref = await page.evaluate(
-      () => (document.activeElement as HTMLAnchorElement | null)?.href,
-    );
-    expect(focusedHref).toBeTruthy();
+    // Tab through the document until focus lands on the brand link. The
+    // Next.js dev overlay injects a "Open Next.js Dev Tools" button that
+    // is in the tab order under `next dev`; up to a few presses are
+    // needed to skip past it on dev. In production builds the very first
+    // Tab lands on the brand.
+    let tabs = 0;
+    while (tabs < 8) {
+      await page.keyboard.press("Tab");
+      const onBrand = await brand.evaluate(
+        (el) => document.activeElement === el,
+      );
+      if (onBrand) break;
+      tabs++;
+    }
 
-    // Confirm the brand is focused (it should be the first tab stop in the doc).
     await expect(brand).toBeFocused();
 
     const ringDescriptor = await brand.evaluate((el) => {

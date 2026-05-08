@@ -22,8 +22,8 @@ let cached: SessionReviewDb | null = null;
  * The handle is opened once and cached on the module — subsequent callers in
  * the same process share the same connection. The path resolves from
  * `SESSION_REVIEW_DB`, falling back to the legacy default the CLI uses
- * (`$HOME/.local/share/session-review/sessions.sqlite`). Mirrors the wiring
- * in `src/legacy-server.ts:13`.
+ * (`$HOME/.local/share/session-review/sessions.sqlite`). The CLI in
+ * `src/cli.ts` reads the same environment variable and defaults.
  */
 export function getDb(): SessionReviewDb {
   if (!cached) cached = openDb(process.env.SESSION_REVIEW_DB ?? defaultDb);
