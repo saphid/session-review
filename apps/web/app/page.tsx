@@ -1,11 +1,14 @@
-import { searchFilteredSessions } from "@core/db.js";
+import { Filters } from "@/components/search/Filters";
 import { ResultsTable } from "@/components/search/ResultsTable";
-import { getDb } from "@/lib/db";
-import { parseSearchFilters } from "@/lib/search";
 import { Topbar } from "@/components/shell/Topbar";
+import { parse } from "@/lib/search-params";
+import { searchSessionsForPage } from "@/lib/server-search";
 
 // SQLite + the search SQL must run on Node — Next's Edge runtime has no
-// better-sqlite3 binding.
+// better-sqlite3 binding. Search results also depend on the URL query
+// string, so they must be re-fetched on every request; forcing dynamic
+// keeps the server in step with the debounced URL writes the client
+// performs.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -14,43 +17,32 @@ interface SessionsPageProps {
 }
 
 /**
- * Sessions list (route `/`). Server component — reads filters from the URL,
- * runs the SQL via `searchFilteredSessions`, and hands the row set plus the
- * raw search params to the `ResultsTable` client component so it can write
- * sort state back into the URL.
+ * Sessions list (route `/`). Server component composing two beads:
  *
- * T08 will replace this scaffold with the full filters drawer + search bar
- * controls; for now we honor the search/filter params already supported by
- * `parseSearchFilters` so deep links like `/?query=react` produce real
- * results.
+ *   - T08 owns URL ↔ typed-params parsing (`parse`) and the SSR data
+ *     fetch (`searchSessionsForPage`). It also renders the `<Filters>`
+ *     chrome above the table, which writes URL state on change.
+ *   - T09 owns the actual `<ResultsTable>` with sortable headers that
+ *     round-trip sort/dir through the URL.
+ *
+ * Both consumers share a single `parse(raw)` + `searchSessionsForPage`
+ * call so the row count shown by the filter chrome and the rows rendered
+ * in the table never disagree. The Topbar title is "Sessions" per the
+ * redesign brief; the brand link in the sidebar still reads "Session
+ * Review home".
  */
 export default async function SessionsPage({ searchParams }: SessionsPageProps) {
-  const resolved = await searchParams;
-  const params = recordToParams(resolved);
-  const filters = parseSearchFilters(params);
-  const rows = searchFilteredSessions(getDb(), filters);
+  const raw = await searchParams;
+  const parsed = parse(raw);
+  const rows = searchSessionsForPage(parsed);
 
   return (
     <>
       <Topbar title="Sessions" subtitle="Evidence table" />
-      <section className="flex flex-1 flex-col gap-3 px-4 py-6 md:px-6">
-        <ResultsTable rows={rows} searchParams={resolved} />
+      <section className="flex flex-1 flex-col gap-4 px-4 py-6 md:px-6">
+        <Filters initial={parsed} resultCount={rows.length} />
+        <ResultsTable rows={rows} searchParams={raw} />
       </section>
     </>
   );
-}
-
-function recordToParams(
-  record: Record<string, string | string[] | undefined>,
-): URLSearchParams {
-  const params = new URLSearchParams();
-  for (const [key, value] of Object.entries(record)) {
-    if (value === undefined) continue;
-    if (Array.isArray(value)) {
-      for (const v of value) params.append(key, v);
-    } else {
-      params.set(key, value);
-    }
-  }
-  return params;
 }
