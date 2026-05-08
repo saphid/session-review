@@ -19,6 +19,7 @@ import {
   type SortKey,
 } from "@/lib/search-display";
 import { MatchPill } from "./MatchPill";
+import { ResultCard } from "./ResultCard";
 import { RowActions } from "./RowActions";
 import { RowDrawer } from "./RowDrawer";
 
@@ -58,6 +59,13 @@ const PROVIDER_GLYPH: Record<string, string> = {
  * `<button>` inside the `<th>` so keyboard users get Tab+Enter parity.
  * `aria-sort` is updated honestly — only the active column carries an
  * "ascending" or "descending" value; the rest report "none".
+ *
+ * Responsive split (T16): the desktop table is `min-width: 1060px` which
+ * forces horizontal scroll on phones, so under `md` we render a stacked
+ * list of `<ResultCard>` instead. The desktop branch keeps the T10 row
+ * drawer (click row → expand `<RowDrawer />`); the mobile branch deep
+ * links to `/session/<id>` via `<ResultCard>` and does NOT open a drawer
+ * — the screen is too narrow for a side-by-side preview.
  */
 export function ResultsTable({ rows, searchParams }: ResultsTableProps) {
   const router = useRouter();
@@ -113,80 +121,100 @@ export function ResultsTable({ rows, searchParams }: ResultsTableProps) {
   }, []);
 
   return (
-    <div className="border-border overflow-x-auto rounded-md border">
-      <table
-        aria-label="Sessions results"
-        className="border-collapse text-sm"
-        style={{ minWidth: "1060px", width: "100%" }}
+    <>
+      {/* Mobile (<720 px): stacked card layout. The desktop table is
+       * `min-width: 1060px` which forces horizontal scroll on phones. We
+       * render both surfaces and let the responsive class hide the wrong
+       * one — keeps server-side data flow identical for both. Cards link
+       * directly to /session/<id> instead of expanding an in-place drawer
+       * (mobile has no room for a side-by-side preview). */}
+      <div
+        className="flex flex-col gap-2 md:hidden"
+        data-testid="results-card-list"
       >
-        <thead className="bg-surface-low text-muted-strong border-border border-b">
-          <tr>
-            <Th width="56px">Agent</Th>
-            <Th width="auto" align="left">
-              Task
-            </Th>
-            <Th width="170px" align="left">
-              Project
-            </Th>
-            <Th width="140px" align="left">
-              Relation
-            </Th>
-            <SortableTh
-              testId="th-runtime"
-              sortKey="runtime"
-              label="Run time"
-              activeSort={activeSort}
-              activeDir={activeDir}
-              onSort={onSort}
-              width="130px"
-            />
-            <SortableTh
-              testId="th-activity"
-              sortKey="activity"
-              label="Activity"
-              activeSort={activeSort}
-              activeDir={activeDir}
-              onSort={onSort}
-              width="160px"
-            />
-            <SortableTh
-              testId="th-match"
-              sortKey="match"
-              label="Match"
-              activeSort={activeSort}
-              activeDir={activeDir}
-              onSort={onSort}
-              width="80px"
-            />
-            <Th width="130px">
-              <span className="sr-only">Actions</span>
-            </Th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.length === 0 ? (
+        {rows.length === 0 ? (
+          <p className="text-muted border-border bg-surface rounded-md border px-4 py-6 text-center text-sm">
+            No sessions match the current filters.
+          </p>
+        ) : (
+          rows.map((row) => <ResultCard key={row.sessionId} row={row} />)
+        )}
+      </div>
+      <div className="border-border hidden overflow-x-auto rounded-md border md:block">
+        <table
+          aria-label="Sessions results"
+          className="border-collapse text-sm"
+          style={{ minWidth: "1060px", width: "100%" }}
+        >
+          <thead className="bg-surface-low text-muted-strong border-border border-b">
             <tr>
-              <td
-                colSpan={8}
-                className="text-muted px-4 py-6 text-center text-sm"
-              >
-                No sessions match the current filters.
-              </td>
-            </tr>
-          ) : (
-            rows.map((row) => (
-              <Row
-                key={row.sessionId}
-                row={row}
-                expanded={expandedRowId === row.sessionId}
-                onToggle={onRowToggle}
-                onClose={() => setExpandedRowId(null)}
+              <Th width="56px">Agent</Th>
+              <Th width="auto" align="left">
+                Task
+              </Th>
+              <Th width="170px" align="left">
+                Project
+              </Th>
+              <Th width="140px" align="left">
+                Relation
+              </Th>
+              <SortableTh
+                testId="th-runtime"
+                sortKey="runtime"
+                label="Run time"
+                activeSort={activeSort}
+                activeDir={activeDir}
+                onSort={onSort}
+                width="130px"
               />
-            ))
-          )}
-        </tbody>
-      </table>
-    </div>
+              <SortableTh
+                testId="th-activity"
+                sortKey="activity"
+                label="Activity"
+                activeSort={activeSort}
+                activeDir={activeDir}
+                onSort={onSort}
+                width="160px"
+              />
+              <SortableTh
+                testId="th-match"
+                sortKey="match"
+                label="Match"
+                activeSort={activeSort}
+                activeDir={activeDir}
+                onSort={onSort}
+                width="80px"
+              />
+              <Th width="130px">
+                <span className="sr-only">Actions</span>
+              </Th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={8}
+                  className="text-muted px-4 py-6 text-center text-sm"
+                >
+                  No sessions match the current filters.
+                </td>
+              </tr>
+            ) : (
+              rows.map((row) => (
+                <Row
+                  key={row.sessionId}
+                  row={row}
+                  expanded={expandedRowId === row.sessionId}
+                  onToggle={onRowToggle}
+                  onClose={() => setExpandedRowId(null)}
+                />
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 

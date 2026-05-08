@@ -97,6 +97,17 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
+
+  /* Under the md breakpoint, suppress horizontal scroll. The desktop
+   * `<table>` and any wide flex/grid children otherwise let the body
+   * itself scroll sideways on phones (mobile fail #1 in
+   * docs/review/10-mobile.md). The card layout is the long-term fix;
+   * this rule is the safety net. */
+  @media (max-width: 720px) {
+    body {
+      overflow-x: hidden;
+    }
+  }
 }
 
 @utility focus-ring {

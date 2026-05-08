@@ -28,7 +28,7 @@ export function StatStrip({ turns, tools, skills, linked }: StatStripProps) {
     <ul
       role="list"
       aria-label="Session statistics"
-      className="border-border bg-surface-low grid grid-cols-2 gap-px overflow-hidden rounded-md border md:grid-cols-4"
+      className="border-border bg-surface-low grid grid-cols-2 gap-px overflow-hidden rounded-md border min-[480px]:grid-cols-4"
     >
       {stats.map((stat) => (
         <li
