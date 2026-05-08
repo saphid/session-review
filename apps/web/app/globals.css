@@ -66,6 +66,10 @@
   --color-code-border: rgba(148, 160, 184, 0.22);
   --color-code-caption-bg: #111827;
   --color-code-caption-text: #c8d0e5;
+
+  /* Breakpoints — `md` is the desktop/mobile cutover for the shell.
+   * Aligned with `docs/review/10-mobile.md` (mobile-first under 720 px). */
+  --breakpoint-md: 720px;
 }
 
 @layer base {
