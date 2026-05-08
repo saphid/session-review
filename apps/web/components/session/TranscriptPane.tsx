@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { isBootstrapContext } from "@/lib/transcript-noise";
 import type { TranscriptItem } from "@/lib/types";
 import { Toc, type TocEntry } from "./Toc";
 import { Toolbar } from "./Toolbar";
@@ -53,6 +54,10 @@ export function TranscriptPane({ sessionId }: TranscriptPaneProps) {
         index: item.index,
         role: item.role,
         preview: item.content.slice(0, 48).replace(/\s+/g, " "),
+        isBootstrap: isBootstrapContext({
+          role: item.role,
+          content: item.content,
+        }),
       })),
     [items],
   );
