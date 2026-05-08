@@ -44,6 +44,22 @@ export function PiSidebar({ files = [], screen = null, selectedItem = null }: Pi
   const [busy, setBusy] = useState(false);
   const [width, setWidth] = useState<number>(MIN_WIDTH + 40);
   const sidebarId = useId();
+  const activeController = useRef<AbortController | null>(null);
+
+  // Abort any in-flight stream when the sidebar unmounts so the
+  // server-side `pi` child can be SIGTERM'd via `request.signal`.
+  useEffect(() => {
+    return () => {
+      activeController.current?.abort();
+      activeController.current = null;
+    };
+  }, []);
+
+  const stopStreaming = useCallback(() => {
+    activeController.current?.abort();
+    activeController.current = null;
+    setBusy(false);
+  }, []);
 
   // Hydrate width from localStorage after mount (avoids SSR mismatch).
   useEffect(() => {
@@ -122,6 +138,7 @@ export function PiSidebar({ files = [], screen = null, selectedItem = null }: Pi
       setBusy(true);
 
       const controller = new AbortController();
+      activeController.current = controller;
       try {
         const response = await fetch("/api/pi/chat", {
           method: "POST",
@@ -247,20 +264,28 @@ export function PiSidebar({ files = [], screen = null, selectedItem = null }: Pi
           );
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const aborted = error instanceof DOMException && error.name === "AbortError";
+        const message = aborted
+          ? "Pi turn cancelled."
+          : error instanceof Error
+            ? error.message
+            : String(error);
         setMessages((prior) =>
           prior.map((entry) =>
             entry.id === assistantId
               ? {
                   ...entry,
-                  content: `Pi request failed: ${message}`,
-                  isError: true,
+                  content: aborted ? message : `Pi request failed: ${message}`,
+                  isError: !aborted,
                   isStreaming: false,
                 }
               : entry,
           ),
         );
       } finally {
+        if (activeController.current === controller) {
+          activeController.current = null;
+        }
         setBusy(false);
       }
     },
@@ -331,7 +356,7 @@ export function PiSidebar({ files = [], screen = null, selectedItem = null }: Pi
         emptyState="Ready. Ask Pi about the visible page — follow-ups reuse the same persistent session."
       />
 
-      <PiInput disabled={busy} onSubmit={sendMessage} />
+      <PiInput disabled={busy} onSubmit={sendMessage} onStop={stopStreaming} />
     </aside>
   );
 }
