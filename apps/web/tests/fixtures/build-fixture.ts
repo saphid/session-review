@@ -121,6 +121,11 @@ for (const doc of sessions) {
   if (upsertSession(db, doc)) inserted++;
 }
 
+// Freeze ingested_at so the committed fixture is byte-deterministic across rebuilds.
+// upsertSession writes `new Date().toISOString()` per insert, which would otherwise drift.
+const FROZEN_INGESTED_AT = "2026-05-08T00:00:00.000Z";
+db.prepare("UPDATE sessions SET indexed_at = ?").run(FROZEN_INGESTED_AT);
+
 const counts = {
   sessions: (db.prepare("SELECT COUNT(*) AS n FROM sessions").get() as { n: number }).n,
   fts: (db.prepare("SELECT COUNT(*) AS n FROM sessions_fts").get() as { n: number }).n,
