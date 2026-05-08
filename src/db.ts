@@ -61,7 +61,7 @@ export interface LinkedSession {
   reason: string;
 }
 
-type RawSearchResult = Omit<SearchResult, "isBatch" | "isSubagent" | "parentSessionId" | "parentTitle" | "groupKey" | "groupLabel" | "groupReason"> & { isBatch: number };
+type RawSearchResult = Omit<SearchResult, "isBatch" | "isSubagent" | "parentSessionId" | "parentTitle" | "groupKey" | "groupLabel" | "groupReason" | "matchScore"> & { isBatch: number; rawRank: number | null };
 
 type ParentLookupRow = { sessionId: string; title: string | null; startedAt: string | null; path: string };
 
@@ -228,7 +228,9 @@ export function searchFilteredSessions(db: SessionReviewDb, filters: SessionFilt
       .prepare(`
         SELECT s.provider, s.id AS sessionId, s.title, s.started_at AS startedAt, s.cwd, s.path, s.is_batch AS isBatch,
                CAST(s.size_bytes / 4 AS INTEGER) AS tokenEstimate,
-               NULL AS snippet
+               COALESCE((SELECT SUM(count) FROM usage_signals u WHERE u.session_id = s.id AND u.kind = 'tool'), 0) AS toolUseCount,
+               NULL AS snippet,
+               NULL AS rawRank
         FROM sessions s
         ${sessionClauses.length ? `WHERE ${sessionClauses.join(" AND ")}` : ""}
         ORDER BY s.started_at DESC
@@ -244,28 +246,42 @@ export function searchFilteredSessions(db: SessionReviewDb, filters: SessionFilt
   const rows = db
     .prepare(`
       WITH matched AS (
-        SELECT rowid, session_id, rank
+        SELECT rowid, session_id, bm25(sessions_fts) AS rawRank
         FROM sessions_fts
         WHERE sessions_fts MATCH @query
-        ORDER BY rank
+        ORDER BY rawRank
         LIMIT @limit
       )
       SELECT s.provider, s.id AS sessionId, s.title, s.started_at AS startedAt, s.cwd, s.path, s.is_batch AS isBatch,
              CAST(s.size_bytes / 4 AS INTEGER) AS tokenEstimate,
-             snippet(sessions_fts, 4, '[', ']', ' … ', 24) AS snippet
+             COALESCE((SELECT SUM(count) FROM usage_signals u WHERE u.session_id = s.id AND u.kind = 'tool'), 0) AS toolUseCount,
+             snippet(sessions_fts, 4, '[', ']', ' … ', 24) AS snippet,
+             matched.rawRank AS rawRank
       FROM matched
       JOIN sessions_fts ON sessions_fts.rowid = matched.rowid
       JOIN sessions s ON s.id = matched.session_id
       ${sessionClauses.length ? `WHERE ${sessionClauses.join(" AND ")}` : ""}
-      ORDER BY matched.rank
+      ORDER BY matched.rawRank
     `)
     .all(params) as RawSearchResult[];
   return enrichSearchResults(db, rows);
 }
 
 function enrichSearchResults(db: SessionReviewDb, rows: RawSearchResult[]): SearchResult[] {
+  // bm25() returns a non-positive number where smaller (more negative) means a
+  // better match. Normalize the batch to 0..1 (best=1) so the UI can show a
+  // real relevance score instead of a fabricated one. When no query was used,
+  // every row has rawRank = null and we propagate matchScore = null.
+  const ranks = rows.map((row) => row.rawRank).filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  const minRank = ranks.length ? Math.min(...ranks) : 0;
+  const maxRank = ranks.length ? Math.max(...ranks) : 0;
+  const span = maxRank - minRank;
   return rows.map((row) => {
     const parent = inferParentInfo(db, row);
+    let matchScore: number | null = null;
+    if (typeof row.rawRank === "number" && Number.isFinite(row.rawRank)) {
+      matchScore = ranks.length === 1 || span === 0 ? 1 : (maxRank - row.rawRank) / span;
+    }
     return {
       provider: row.provider,
       sessionId: row.sessionId,
@@ -275,6 +291,8 @@ function enrichSearchResults(db: SessionReviewDb, rows: RawSearchResult[]): Sear
       path: row.path,
       snippet: row.snippet,
       tokenEstimate: row.tokenEstimate,
+      toolUseCount: row.toolUseCount,
+      matchScore,
       isBatch: row.isBatch === 1,
       ...parent,
     };

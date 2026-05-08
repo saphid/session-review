@@ -28,6 +28,8 @@ export interface SearchResult {
   path: string;
   snippet: string | null;
   tokenEstimate: number;
+  toolUseCount: number;
+  matchScore: number | null;
   isBatch: boolean;
   isSubagent: boolean;
   parentSessionId: string | null;
