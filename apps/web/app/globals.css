@@ -1,8 +1,85 @@
 @import "tailwindcss";
 
+/*
+ * Design tokens lifted from the redesign worktree
+ * (worktree-agent-a836d0033db4f6656:src/web/index.html).
+ *
+ * Tailwind v4 reads custom properties declared inside `@theme` and exposes
+ * them both as `--*` variables on `:root` and as auto-generated utilities
+ * (e.g. `--color-canvas` → `bg-canvas`, `--spacing-2` → `gap-2`/`p-2`,
+ * `--radius-md` → `rounded-md`).
+ */
+@theme {
+  /* Spacing — 4px grid */
+  --spacing-1: 4px;
+  --spacing-2: 8px;
+  --spacing-3: 12px;
+  --spacing-4: 16px;
+  --spacing-5: 20px;
+  --spacing-6: 24px;
+  --spacing-8: 32px;
+
+  /* Radii */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-panel: 8px;
+
+  /* Surfaces */
+  --color-canvas: #0b0d11;
+  --color-surface: #13151b;
+  --color-surface-low: #101218;
+  --color-surface-raised: #181a21;
+  --color-field: #0a0c11;
+
+  /* Borders */
+  --color-border: rgba(148, 160, 184, 0.14);
+  --color-border-strong: rgba(148, 160, 184, 0.22);
+
+  /* Text */
+  --color-text: #e6e9ef;
+  --color-text-secondary: #aab1bd;
+  --color-muted: #7a818e;
+  --color-muted-strong: #9097a3;
+
+  /* Role colors */
+  --color-user: #7aa2ff;
+  --color-assistant: #b6bccb;
+  --color-tool: #c084fc;
+  --color-skill: #86efac;
+  --color-system: #7b8498;
+
+  /* Accent */
+  --color-accent: #7aa2ff;
+  --color-accent-soft: rgba(122, 162, 255, 0.12);
+
+  /* State */
+  --color-ok: #86efac;
+  --color-warn: #fbbf24;
+  --color-danger: #f87171;
+
+  /* Focus ring */
+  --shadow-focus: 0 0 0 2px rgba(122, 162, 255, 0.55);
+
+  /* Code surfaces */
+  --color-code-bg: #0d1117;
+  --color-code-border: rgba(148, 160, 184, 0.22);
+  --color-code-caption-bg: #111827;
+  --color-code-caption-text: #c8d0e5;
+}
+
 @layer base {
-  html,
   body {
-    @apply bg-black text-white;
+    background: var(--color-canvas);
+    color: var(--color-text);
+    font-family:
+      ui-sans-serif, system-ui, -apple-system, "SF Pro Text", "Segoe UI", Roboto,
+      "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
+}
+
+@utility focus-ring {
+  box-shadow: 0 0 0 2px rgb(122 162 255 / 0.55);
 }
