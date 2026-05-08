@@ -1,5 +1,7 @@
 "use client";
 
+import { useRouter } from "next/navigation";
+import { useCallback } from "react";
 import {
   Bar,
   BarChart,
@@ -9,6 +11,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { buildSearchHref } from "@/lib/search-params";
 import type { TimeBucket, UsageKind } from "@/lib/types";
 import type { UsageBucketRow, UsageSeries } from "./series";
 
@@ -31,9 +34,25 @@ interface UsageChartProps {
  * (e.g. "Tools usage by day") so screen readers surface the chart's purpose
  * even though the points themselves stay visual. Tabular numerals on tick
  * labels keep number columns aligned across days/weeks.
+ *
+ * T15: clicking a stacked bar segment drills to the search page filtered to
+ * that series' name AND to the bucket the segment belongs to (start/end date).
+ * Recharts' `onClick` on a `<Bar>` fires per-segment with the data point —
+ * we use the row's `bucket` plus the active series name to build the href.
  */
 export function UsageChart({ rows, series, kind, bucket }: UsageChartProps) {
+  const router = useRouter();
   const ariaLabel = `${kind === "skill" ? "Skills" : "Tools"} usage by ${bucket}`;
+
+  const onSegmentClick = useCallback(
+    (seriesName: string, bucketStart: string) => {
+      // Synthetic "Other" series has no single name to filter by.
+      if (seriesName === "__other__") return;
+      const range = bucketRange(bucketStart, bucket);
+      router.push(buildSearchHref(seriesName, range));
+    },
+    [bucket, router],
+  );
 
   if (rows.length === 0 || series.length === 0) {
     return (
@@ -95,10 +114,45 @@ export function UsageChart({ rows, series, kind, bucket }: UsageChartProps) {
               stackId="usage"
               fill={s.color}
               isAnimationActive={false}
+              cursor={s.name === "__other__" ? "default" : "pointer"}
+              onClick={(data) => {
+                // Recharts hands us the segment's BarRectangleItem; the
+                // original data row is on `payload`. We only need its bucket.
+                const payload = (data as { payload?: { bucket?: unknown } })
+                  .payload;
+                const bucketStart = payload?.bucket;
+                if (typeof bucketStart === "string") {
+                  onSegmentClick(s.name, bucketStart);
+                }
+              }}
             />
           ))}
         </BarChart>
       </ResponsiveContainer>
     </div>
   );
+}
+
+/**
+ * Compute the half-open `[startDate, endDate]` range for a bucket. The data
+ * layer treats the dates as YYYY-MM-DD inclusive bounds, so for a `day`
+ * bucket start === end and for a `week` bucket end is start + 6 days
+ * (Monday-anchored buckets cover Mon–Sun inclusive).
+ */
+function bucketRange(
+  bucketStart: string,
+  bucket: TimeBucket,
+): { startDate: string; endDate: string } {
+  if (bucket === "week") {
+    const end = addDaysIso(bucketStart, 6);
+    return { startDate: bucketStart, endDate: end };
+  }
+  return { startDate: bucketStart, endDate: bucketStart };
+}
+
+function addDaysIso(iso: string, days: number): string {
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return iso;
+  const d = new Date(ms + days * 24 * 60 * 60 * 1000);
+  return d.toISOString().slice(0, 10);
 }

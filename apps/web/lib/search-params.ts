@@ -88,6 +88,27 @@ export function serialize(params: ParsedSearchParams): URLSearchParams {
 }
 
 /**
+ * Build a search-page href that drills to sessions matching `query`, optionally
+ * scoped to a date range. Used by the usage page (T15) so a click on a legend
+ * item, bar segment, or table row pivots to the session list filtered to that
+ * tool/skill — and to the bucket the segment belongs to, when known.
+ *
+ * Empty bucket strings are dropped so a legend click stays untyped over time.
+ * Dates pass through verbatim (the data layer treats "YYYY-MM-DD" as the
+ * canonical bucket boundary; week buckets already arrive as a Monday date).
+ */
+export function buildSearchHref(
+  query: string,
+  range?: { startDate?: string | null; endDate?: string | null },
+): string {
+  const out = new URLSearchParams();
+  out.set("query", query);
+  if (range?.startDate) out.set("startDate", range.startDate);
+  if (range?.endDate) out.set("endDate", range.endDate);
+  return `/?${out.toString()}`;
+}
+
+/**
  * Convert parsed params into the shape the data layer accepts. Mirrors
  * `parseSearchFilters` in `apps/web/lib/search.ts` so SSR can call
  * `searchFilteredSessions` directly without round-tripping through the API.

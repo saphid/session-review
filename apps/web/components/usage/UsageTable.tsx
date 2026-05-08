@@ -1,6 +1,8 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import { buildSearchHref } from "@/lib/search-params";
 import type { UsageSummaryRow } from "@/lib/types";
 
 type SortKey = "name" | "count" | "sessions";
@@ -19,6 +21,7 @@ interface UsageTableProps {
  * a click filters the search page to that tool.
  */
 export function UsageTable({ rows }: UsageTableProps) {
+  const router = useRouter();
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({
     key: "count",
     dir: "desc",
@@ -83,7 +86,19 @@ export function UsageTable({ rows }: UsageTableProps) {
             sorted.map((row) => (
               <tr
                 key={`${row.kind}:${row.name}`}
-                className="border-border/60 border-t hover:bg-surface-raised"
+                data-row-name={row.name}
+                role="link"
+                tabIndex={0}
+                aria-label={`Filter sessions by ${row.name}`}
+                onClick={() => router.push(buildSearchHref(row.name))}
+                onKeyDown={(event) => {
+                  // Enter / Space activate the row like a link.
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    router.push(buildSearchHref(row.name));
+                  }
+                }}
+                className="border-border/60 border-t cursor-pointer hover:bg-surface-raised focus-visible:outline-none focus-visible:bg-surface-raised focus-visible:ring-2 focus-visible:ring-accent/55"
               >
                 <td className="px-3 py-2 text-text">{row.name}</td>
                 <td className="px-3 py-2 text-right tabular-nums text-text">
