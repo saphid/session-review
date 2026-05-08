@@ -19,7 +19,7 @@
     "e2e:screenshots": "node tests/e2e-session-page.mjs",
     "e2e:web": "playwright test --config apps/web/playwright.config.ts",
     "fixture:build": "tsx apps/web/tests/fixtures/build-fixture.ts",
-    "test:integration": "tsx --conditions=react-server --test apps/web/tests/integration/*.test.ts"
+    "test:integration": "npm run fixture:build && tsx --conditions=react-server --test apps/web/tests/integration/*.test.ts"
   },
   "dependencies": {
     "@highlightjs/cdn-assets": "^11.11.1",

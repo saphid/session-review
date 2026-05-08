@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { classifyBatchSession, extractExtensionUsageSignals, extractUsageSignals, type BatchMode, type TimeBucket, type UsageKind } from "./analytics.js";
 import { bucketDate } from "./analytics.js";
@@ -157,6 +157,18 @@ function migrate(db: SessionReviewDb): void {
 
     CREATE INDEX IF NOT EXISTS idx_extension_usage_package ON extension_usage_signals(package_name, kind, name, event);
     CREATE INDEX IF NOT EXISTS idx_extension_usage_session ON extension_usage_signals(session_id);
+
+    CREATE TABLE IF NOT EXISTS transcript_items (
+      session_id TEXT NOT NULL,
+      idx INTEGER NOT NULL,
+      role TEXT,
+      content_offset INTEGER NOT NULL,
+      content_length INTEGER NOT NULL,
+      tool_count INTEGER NOT NULL DEFAULT 0,
+      skill_count INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (session_id, idx),
+      FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
+    );
   `);
   ensureColumn(db, "sessions", "is_batch", "INTEGER NOT NULL DEFAULT 0");
   ensureColumn(db, "sessions", "parent_session_id", "TEXT");
@@ -187,6 +199,8 @@ function writeSession(db: SessionReviewDb, doc: SessionDocument): void {
   const parent = findParentSession(db, doc.sessionId, doc.path);
   const parentSessionId = parent?.sessionId ?? null;
   const parentTitle = parent?.title ?? null;
+  const skillNames = signals.filter((entry) => entry.kind === "skill").map((entry) => entry.name.toLowerCase());
+  const transcriptItems = computeTranscriptItems(doc.body, skillNames);
   const tx = db.transaction(() => {
     db.prepare(`
       INSERT INTO sessions (id, provider, path, title, started_at, cwd, mtime_ms, size_bytes, indexed_at, is_batch, parent_session_id, parent_title)
@@ -207,6 +221,7 @@ function writeSession(db: SessionReviewDb, doc: SessionDocument): void {
     db.prepare("DELETE FROM sessions_fts WHERE session_id = ?").run(doc.sessionId);
     db.prepare("DELETE FROM usage_signals WHERE session_id = ?").run(doc.sessionId);
     db.prepare("DELETE FROM extension_usage_signals WHERE session_id = ?").run(doc.sessionId);
+    db.prepare("DELETE FROM transcript_items WHERE session_id = ?").run(doc.sessionId);
     db.prepare("INSERT INTO sessions_fts (session_id, provider, title, cwd, body) VALUES (?, ?, ?, ?, ?)").run(
       doc.sessionId,
       doc.provider,
@@ -218,6 +233,12 @@ function writeSession(db: SessionReviewDb, doc: SessionDocument): void {
     for (const signal of signals) insertSignal.run(doc.sessionId, signal.kind, signal.name, signal.count);
     const insertExtensionSignal = db.prepare("INSERT INTO extension_usage_signals (session_id, package_name, kind, name, event, count) VALUES (?, ?, ?, ?, ?, ?)");
     for (const signal of extensionSignals) insertExtensionSignal.run(doc.sessionId, signal.packageName, signal.kind, signal.name, signal.event, signal.count);
+    const insertTranscriptItem = db.prepare(
+      "INSERT INTO transcript_items (session_id, idx, role, content_offset, content_length, tool_count, skill_count) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    );
+    for (const item of transcriptItems) {
+      insertTranscriptItem.run(doc.sessionId, item.index, item.role, item.contentOffset, item.contentLength, item.toolCount, item.skillCount);
+    }
   });
   tx();
 }
@@ -463,11 +484,21 @@ export function rebuildDerived(db: SessionReviewDb): number {
     const updateSession = db.prepare("UPDATE sessions SET is_batch = ? WHERE id = ?");
     const deleteSignals = db.prepare("DELETE FROM usage_signals WHERE session_id = ?");
     const insertSignal = db.prepare("INSERT INTO usage_signals (session_id, kind, name, count) VALUES (?, ?, ?, ?)");
+    const deleteTranscriptItems = db.prepare("DELETE FROM transcript_items WHERE session_id = ?");
+    const insertTranscriptItem = db.prepare(
+      "INSERT INTO transcript_items (session_id, idx, role, content_offset, content_length, tool_count, skill_count) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    );
     for (const row of rows) {
       const isBatch = classifyBatchSession({ provider: row.provider, path: row.path, title: row.title, cwd: row.cwd, body: row.body }) ? 1 : 0;
       updateSession.run(isBatch, row.sessionId);
       deleteSignals.run(row.sessionId);
-      for (const signal of extractUsageSignals(row.body)) insertSignal.run(row.sessionId, signal.kind, signal.name, signal.count);
+      const signals = extractUsageSignals(row.body);
+      for (const signal of signals) insertSignal.run(row.sessionId, signal.kind, signal.name, signal.count);
+      const skillNames = signals.filter((entry) => entry.kind === "skill").map((entry) => entry.name.toLowerCase());
+      deleteTranscriptItems.run(row.sessionId);
+      for (const item of computeTranscriptItems(row.body, skillNames)) {
+        insertTranscriptItem.run(row.sessionId, item.index, item.role, item.contentOffset, item.contentLength, item.toolCount, item.skillCount);
+      }
     }
   });
   tx();
@@ -495,16 +526,22 @@ export function rebuildParentLinks(db: SessionReviewDb): number {
   return updated;
 }
 
-export function sessionDetails(db: SessionReviewDb, sessionId: string): SessionDetails | null {
+/**
+ * Header + stat strip for a session — everything except the per-turn
+ * `transcript` content. Cheap on the hot path: no FTS body read, no
+ * whole-body regex split. The per-turn metadata (`turns`) and aggregate
+ * counts come from `transcript_items` when populated; on un-migrated rows
+ * we fall back to the FTS body once so the API does not break.
+ */
+export function sessionHeader(db: SessionReviewDb, sessionId: string): Omit<SessionDetails, "transcript"> | null {
   const row = db
     .prepare(`
       SELECT s.id AS sessionId, s.provider, s.title, s.started_at AS startedAt, s.cwd, s.path,
-             s.indexed_at AS indexedAt, s.is_batch AS isBatch, f.body
+             s.indexed_at AS indexedAt, s.is_batch AS isBatch
       FROM sessions s
-      LEFT JOIN sessions_fts f ON f.session_id = s.id
       WHERE s.id = ?
     `)
-    .get(sessionId) as ({ sessionId: string; provider: string; title: string | null; startedAt: string | null; cwd: string | null; path: string; indexedAt: string; isBatch: number; body: string | null } | undefined);
+    .get(sessionId) as ({ sessionId: string; provider: string; title: string | null; startedAt: string | null; cwd: string | null; path: string; indexedAt: string; isBatch: number } | undefined);
   if (!row) return null;
   const usage = db
     .prepare(`
@@ -514,9 +551,30 @@ export function sessionDetails(db: SessionReviewDb, sessionId: string): SessionD
       ORDER BY count DESC, name ASC
     `)
     .all(sessionId) as UsageSummaryRow[];
-  const body = row.body ?? "";
-  const transcript = deriveTranscriptItems(body, usage);
-  const turns = transcript.map(({ index, role, toolCount, skillCount }) => ({ index, role, toolCount, skillCount }));
+  const turnRows = db
+    .prepare(`
+      SELECT idx AS index_, role, tool_count AS toolCount, skill_count AS skillCount
+      FROM transcript_items
+      WHERE session_id = ?
+      ORDER BY idx ASC
+    `)
+    .all(sessionId) as Array<{ index_: number; role: string | null; toolCount: number; skillCount: number }>;
+  let turns: SessionTurnPoint[];
+  let bodyForLinkAndPurpose = "";
+  let bodyPreview = "";
+  if (turnRows.length > 0) {
+    turns = turnRows.map((entry) => ({ index: entry.index_, role: entry.role ?? "message", toolCount: entry.toolCount, skillCount: entry.skillCount }));
+    // bodyPreview is best-effort. We intentionally do not read the full
+    // file here — the streaming path delivers the transcript content. A
+    // header-only consumer can request a preview later if needed.
+  } else {
+    // Fallback for rows ingested before the `transcript_items` migration.
+    const ftsRow = db.prepare("SELECT body FROM sessions_fts WHERE session_id = ?").get(sessionId) as { body: string | null } | undefined;
+    bodyForLinkAndPurpose = ftsRow?.body ?? "";
+    const fallback = deriveTranscriptItems(bodyForLinkAndPurpose, usage);
+    turns = fallback.map(({ index, role, toolCount, skillCount }) => ({ index, role, toolCount, skillCount }));
+    bodyPreview = bodyForLinkAndPurpose.slice(0, 20_000);
+  }
   const toolUseCount = usage.filter((entry) => entry.kind === "tool").reduce((sum, entry) => sum + entry.count, 0);
   const skillUseCount = usage.filter((entry) => entry.kind === "skill").reduce((sum, entry) => sum + entry.count, 0);
   return {
@@ -528,16 +586,91 @@ export function sessionDetails(db: SessionReviewDb, sessionId: string): SessionD
     path: row.path,
     indexedAt: row.indexedAt,
     isBatch: row.isBatch === 1,
-    purpose: inferPurpose(row.title, body),
-    bodyPreview: body.slice(0, 20_000),
+    purpose: inferPurpose(row.title, bodyForLinkAndPurpose),
+    bodyPreview,
     turnCount: turns.length,
     toolUseCount,
     skillUseCount,
     turns,
-    transcript,
     usage,
-    linkedSessions: findLinkedSessions(db, row.sessionId, body, row.path),
+    linkedSessions: findLinkedSessions(db, row.sessionId, bodyForLinkAndPurpose, row.path),
   };
+}
+
+interface StoredTranscriptOffset {
+  index: number;
+  role: string | null;
+  contentOffset: number;
+  contentLength: number;
+  toolCount: number;
+  skillCount: number;
+}
+
+/**
+ * Returns the offsets stored in `transcript_items` for a session, sorted
+ * by idx. An empty array means the session has not been migrated yet —
+ * callers should fall back to deriving from the FTS body.
+ */
+export function transcriptOffsets(db: SessionReviewDb, sessionId: string): StoredTranscriptOffset[] {
+  return db
+    .prepare(`
+      SELECT idx AS index_, role, content_offset AS contentOffset, content_length AS contentLength,
+             tool_count AS toolCount, skill_count AS skillCount
+      FROM transcript_items
+      WHERE session_id = ?
+      ORDER BY idx ASC
+    `)
+    .all(sessionId)
+    .map((entry) => {
+      const row = entry as { index_: number; role: string | null; contentOffset: number; contentLength: number; toolCount: number; skillCount: number };
+      return {
+        index: row.index_,
+        role: row.role,
+        contentOffset: row.contentOffset,
+        contentLength: row.contentLength,
+        toolCount: row.toolCount,
+        skillCount: row.skillCount,
+      };
+    });
+}
+
+/**
+ * Loads the per-turn transcript items for a session. The fast path slices
+ * the on-disk transcript file (`sessions.path`) using offsets stored in
+ * `transcript_items`. Falls back to deriving from the FTS body for rows
+ * that pre-date the migration or whose source file is unavailable.
+ */
+export function loadTranscriptItems(db: SessionReviewDb, sessionId: string): TranscriptItem[] {
+  const row = db.prepare("SELECT path FROM sessions WHERE id = ?").get(sessionId) as { path: string } | undefined;
+  if (!row) return [];
+  const offsets = transcriptOffsets(db, sessionId);
+  if (offsets.length > 0) {
+    try {
+      const buffer = readFileSync(row.path);
+      return offsets.map((entry) => ({
+        index: entry.index,
+        role: entry.role ?? "message",
+        content: buffer.subarray(entry.contentOffset, entry.contentOffset + entry.contentLength).toString("utf8"),
+        toolCount: entry.toolCount,
+        skillCount: entry.skillCount,
+      }));
+    } catch {
+      // Source file missing or unreadable — fall through to the FTS body
+      // fallback so the API still returns content for un-migrated layouts.
+    }
+  }
+  const ftsRow = db.prepare("SELECT body FROM sessions_fts WHERE session_id = ?").get(sessionId) as { body: string | null } | undefined;
+  const usage = db
+    .prepare("SELECT kind, name, count, 1 AS sessions FROM usage_signals WHERE session_id = ?")
+    .all(sessionId) as UsageSummaryRow[];
+  return deriveTranscriptItems(ftsRow?.body ?? "", usage);
+}
+
+export function sessionDetails(db: SessionReviewDb, sessionId: string): SessionDetails | null {
+  const header = sessionHeader(db, sessionId);
+  if (!header) return null;
+  const transcript = loadTranscriptItems(db, sessionId);
+  return { ...header, transcript };
 }
 
 export function filterOptions(db: SessionReviewDb): FilterOptions {
@@ -554,6 +687,10 @@ export function addSummary(a: IngestSummary, b: IngestSummary): IngestSummary {
   return { candidates: a.candidates + b.candidates, changed: a.changed + b.changed };
 }
 
+/**
+ * In-memory transcript derivation. Used by the legacy code path and as a
+ * fallback when `transcript_items` has no rows yet for a session.
+ */
 function deriveTranscriptItems(body: string, usage: UsageSummaryRow[]): TranscriptItem[] {
   const skillNames = usage.filter((entry) => entry.kind === "skill").map((entry) => entry.name.toLowerCase());
   return body
@@ -568,6 +705,74 @@ function deriveTranscriptItems(body: string, usage: UsageSummaryRow[]): Transcri
       return { index: index + 1, role, content, toolCount, skillCount };
     })
     .filter((item) => item.content.trim().length > 0);
+}
+
+interface ComputedTranscriptItem {
+  index: number;
+  role: string;
+  /** Byte offset of the content within the UTF-8-encoded body buffer. */
+  contentOffset: number;
+  contentLength: number;
+  toolCount: number;
+  skillCount: number;
+}
+
+/**
+ * Walk a transcript body once at ingest time and emit per-turn metadata
+ * keyed to byte offsets in the body's UTF-8 representation. Stored in the
+ * `transcript_items` table so request-time detail can be served by reading
+ * the source file from disk and slicing it — no FTS body read, no whole-body
+ * regex split per request.
+ *
+ * The split rule mirrors the legacy `deriveTranscriptItems`:
+ *   chunks are separated by `\n` followed by a `role:` prefix. Each chunk's
+ *   `content_offset/length` covers the bytes after the role prefix and any
+ *   whitespace, so `buffer.subarray(offset, offset + length).toString("utf8")`
+ *   reproduces what a legacy consumer would see in `item.content`.
+ */
+function computeTranscriptItems(body: string, skillNames: string[]): ComputedTranscriptItem[] {
+  if (body.length === 0) return [];
+  const lowerSkillNames = skillNames.map((name) => name.toLowerCase()).filter((name) => name.length > 0);
+  // Split by the same rule as `deriveTranscriptItems`. Track each chunk's
+  // start position in the original string so we can convert to UTF-8 byte
+  // offsets in one pass below.
+  const chunks: Array<{ start: number; text: string }> = [];
+  const splitRe = /\n(?=[A-Za-z_][\w-]*:)/g;
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+  while ((match = splitRe.exec(body))) {
+    chunks.push({ start: cursor, text: body.slice(cursor, match.index) });
+    cursor = match.index + 1; // skip the matched newline
+  }
+  chunks.push({ start: cursor, text: body.slice(cursor) });
+
+  const items: ComputedTranscriptItem[] = [];
+  let displayIndex = 0;
+  for (const chunk of chunks) {
+    const parsed = chunk.text.match(/^([A-Za-z_][\w-]*):(\s*)([\s\S]*)$/);
+    let role: string;
+    let contentStartChar: number;
+    let contentText: string;
+    if (parsed) {
+      role = parsed[1]?.toLowerCase() ?? "message";
+      const rolePrefixLen = (parsed[1]?.length ?? 0) + 1 + (parsed[2]?.length ?? 0); // role + ":" + whitespace
+      contentStartChar = chunk.start + rolePrefixLen;
+      contentText = parsed[3] ?? "";
+    } else {
+      role = "message";
+      contentStartChar = chunk.start;
+      contentText = chunk.text;
+    }
+    if (contentText.trim().length === 0) continue;
+    displayIndex += 1;
+    const contentOffset = Buffer.byteLength(body.slice(0, contentStartChar), "utf8");
+    const contentLength = Buffer.byteLength(contentText, "utf8");
+    const toolCount = (chunk.text.match(/\b(tool|tool_result|bash|read|write|edit|grep|web_search|bashExecution)\b/gi) ?? []).length;
+    const lower = chunk.text.toLowerCase();
+    const skillCount = lowerSkillNames.reduce((sum, skill) => sum + (lower.includes(skill) ? 1 : 0), 0);
+    items.push({ index: displayIndex, role, contentOffset, contentLength, toolCount, skillCount });
+  }
+  return items;
 }
 
 function inferPurpose(title: string | null, body: string): string | null {

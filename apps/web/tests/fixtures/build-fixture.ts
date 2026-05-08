@@ -2,9 +2,14 @@
 // Produces apps/web/tests/fixtures/sessions.sqlite with a small,
 // representative set of sessions, FTS rows, and usage_signals.
 //
+// Each session's `path` points at a real on-disk transcript file under
+// apps/web/tests/fixtures/transcripts/<provider>/<id>.jsonl. The file
+// content is the raw `body` we pass to upsertSession, byte-for-byte —
+// `transcript_items.content_offset/length` slices into that buffer.
+//
 // Run: npm run fixture:build
 
-import { rmSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { openDb, upsertSession } from "../../../../src/db.js";
@@ -12,6 +17,7 @@ import type { SessionDocument } from "../../../../src/types.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fixturePath = path.resolve(here, "sessions.sqlite");
+const transcriptsDir = path.resolve(here, "transcripts");
 
 // Always rebuild from scratch so the fixture stays deterministic.
 for (const suffix of ["", "-wal", "-shm"]) {
@@ -21,16 +27,51 @@ for (const suffix of ["", "-wal", "-shm"]) {
     // file did not exist — fine
   }
 }
+rmSync(transcriptsDir, { recursive: true, force: true });
+mkdirSync(transcriptsDir, { recursive: true });
 
 const db = openDb(fixturePath);
 
 const baseTime = Date.UTC(2026, 0, 15, 12, 0, 0); // 2026-01-15T12:00:00Z
 
-const sessions: SessionDocument[] = [
+function writeTranscript(provider: string, id: string, body: string): string {
+  const safeId = id.replace(/[^A-Za-z0-9._-]/g, "_");
+  const dir = path.join(transcriptsDir, provider);
+  mkdirSync(dir, { recursive: true });
+  const target = path.join(dir, `${safeId}.jsonl`);
+  writeFileSync(target, body, "utf8");
+  return target;
+}
+
+function buildPerfBody(turns: number): string {
+  // Synthesize a deterministic ~200-turn transcript that exercises the
+  // role-prefix split and tool/skill counters. Each turn is a small,
+  // varied block so the regex split actually has work to do.
+  const lines: string[] = [];
+  for (let index = 0; index < turns; index++) {
+    if (index % 4 === 0) {
+      lines.push(`user: rebuild lane ${index} — kick off the next workstream`);
+    } else if (index % 4 === 1) {
+      lines.push(`assistant: planning lane ${index}; routing to subagents`);
+    } else if (index % 4 === 2) {
+      lines.push(`tool: bash run lane-${index} && tool: read lane-${index}.log`);
+    } else {
+      lines.push(`tool_result: lane ${index} done; grill-me confirms scope`);
+    }
+  }
+  return lines.join("\n");
+}
+
+// `path` is optional: if a spec sets a literal path (e.g. T05's primary/subagent
+// pair, where parentPathCandidates needs the `/subagents/` shape), we honor it
+// verbatim and skip writeTranscript. Otherwise we materialize a real on-disk
+// transcript so T06's loadTranscriptItems can slice from it.
+type FixtureSpec = Omit<SessionDocument, "path"> & { provider: SessionDocument["provider"]; path?: string };
+
+const fixtureSpecs: FixtureSpec[] = [
   {
     provider: "claude",
     sessionId: "claude:fixture-001",
-    path: "/fixtures/claude/fixture-001.jsonl",
     title: "Plan the rebuild",
     startedAt: new Date(baseTime).toISOString(),
     cwd: "/Users/alex/Personal/Projects/session-review",
@@ -48,7 +89,6 @@ const sessions: SessionDocument[] = [
   {
     provider: "codex",
     sessionId: "codex:fixture-002",
-    path: "/fixtures/codex/fixture-002.jsonl",
     title: "Codex sweep",
     startedAt: new Date(baseTime + 60 * 60 * 1000).toISOString(),
     cwd: "/Users/alex/Personal/Projects/session-review",
@@ -66,7 +106,6 @@ const sessions: SessionDocument[] = [
   {
     provider: "pi",
     sessionId: "pi:fixture-003",
-    path: "/fixtures/pi/fixture-003.jsonl",
     title: "Pi triage",
     startedAt: new Date(baseTime + 2 * 60 * 60 * 1000).toISOString(),
     cwd: "/Users/alex/Personal/Projects/session-review",
@@ -83,7 +122,6 @@ const sessions: SessionDocument[] = [
   {
     provider: "cursor",
     sessionId: "cursor:fixture-004",
-    path: "/fixtures/cursor/fixture-004.jsonl",
     title: "Cursor scratchpad",
     startedAt: new Date(baseTime + 3 * 60 * 60 * 1000).toISOString(),
     cwd: "/Users/alex/Personal/Projects/other-project",
@@ -99,7 +137,6 @@ const sessions: SessionDocument[] = [
   {
     provider: "claude",
     sessionId: "claude:fixture-005-batch",
-    path: "/fixtures/claude/orch/run-1/fixture-005.jsonl",
     title: "Batch orchestrator run",
     startedAt: new Date(baseTime + 4 * 60 * 60 * 1000).toISOString(),
     cwd: "/Users/alex/Personal/Projects/session-review",
@@ -117,7 +154,8 @@ const sessions: SessionDocument[] = [
   // T05 — primary + subagent pair so the parent_session_id JOIN has at least one
   // populated row to exercise. The subagent path matches `parentPathCandidates`:
   // `/fixtures/claude/primary-006/subagents/sub-007.jsonl` →
-  // `/fixtures/claude/primary-006.jsonl` (the parent).
+  // `/fixtures/claude/primary-006.jsonl` (the parent). These paths are literal
+  // (not on-disk) — loadTranscriptItems falls back to the FTS body for them.
   {
     provider: "claude",
     sessionId: "claude:fixture-006-primary",
@@ -150,7 +188,25 @@ const sessions: SessionDocument[] = [
     mtimeMs: baseTime + 5 * 60 * 60 * 1000 + 60_000,
     sizeBytes: 2048,
   },
+  {
+    // Perf fixture for T06: 200-turn transcript backed by a real on-disk file.
+    provider: "claude",
+    sessionId: "claude:fixture-perf-200",
+    title: "T06 perf fixture",
+    startedAt: new Date(baseTime + 6 * 60 * 60 * 1000).toISOString(),
+    cwd: "/Users/alex/Personal/Projects/session-review",
+    body: buildPerfBody(200),
+    mtimeMs: baseTime + 6 * 60 * 60 * 1000,
+    sizeBytes: 32_768,
+  },
 ];
+
+const sessions: SessionDocument[] = fixtureSpecs.map((spec) => ({
+  ...spec,
+  // Honor explicit literal paths (T05 primary/subagent pair); otherwise materialize
+  // a real transcript on disk for T06's loadTranscriptItems to slice from.
+  path: spec.path ?? writeTranscript(spec.provider, spec.sessionId, spec.body),
+}));
 
 let inserted = 0;
 for (const doc of sessions) {
@@ -166,6 +222,7 @@ const counts = {
   sessions: (db.prepare("SELECT COUNT(*) AS n FROM sessions").get() as { n: number }).n,
   fts: (db.prepare("SELECT COUNT(*) AS n FROM sessions_fts").get() as { n: number }).n,
   usage: (db.prepare("SELECT COUNT(*) AS n FROM usage_signals").get() as { n: number }).n,
+  transcript: (db.prepare("SELECT COUNT(*) AS n FROM transcript_items").get() as { n: number }).n,
 };
 
 db.close();
@@ -175,3 +232,4 @@ console.log(`  inserted: ${inserted}`);
 console.log(`  sessions row count: ${counts.sessions}`);
 console.log(`  sessions_fts row count: ${counts.fts}`);
 console.log(`  usage_signals row count: ${counts.usage}`);
+console.log(`  transcript_items row count: ${counts.transcript}`);
