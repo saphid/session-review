@@ -8,3 +8,14 @@ coverage/
 *.sqlite-*
 .DS_Store
 npm-debug.log*
+
+# Next.js
+apps/web/.next/
+apps/web/out/
+apps/web/.tsbuildinfo
+*.tsbuildinfo
+
+# Playwright
+test-results/
+playwright-report/
+playwright/.cache/

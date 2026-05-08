@@ -115,7 +115,7 @@ function sessionReviewSourceFiles(): string[] {
   return [
     path.join(rootDir, "src", "web", "client.ts"),
     path.join(rootDir, "src", "web", "index.html"),
-    path.join(rootDir, "src", "server.ts"),
+    path.join(rootDir, "src", "legacy-server.ts"),
     path.join(rootDir, "src", "db.ts"),
   ];
 }
@@ -207,10 +207,6 @@ async function readJsonBody<T>(request: IncomingMessage, maxBytes: number): Prom
     chunks.push(buffer);
   }
   return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}") as T;
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
 async function sendFile(response: ServerResponse, filePath: string, contentType: string): Promise<void> {
