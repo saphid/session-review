@@ -8,19 +8,24 @@ test.describe("Tools (usage) page", () => {
   }) => {
     await page.goto("/tools");
 
+    // Scope queries to the page's <main> region — the Pi sidebar (rendered by
+    // the app shell) also exposes a `role="status"` live region, so a global
+    // `getByRole("status")` collides under strict mode.
+    const main = page.getByRole("main");
+
     // Wait for the chart SVG to mount (Recharts renders an <svg>).
-    const chartSvg = page.locator("[data-slot='usage-chart'] svg").first();
+    const chartSvg = main.locator("[data-slot='usage-chart'] svg").first();
     await expect(chartSvg).toBeVisible();
 
     // (a) Status line: role="status" with the canonical "<n> signals · <m> data points · <ms>ms" pattern.
-    const status = page.getByRole("status");
+    const status = main.getByRole("status");
     await expect(status).toBeVisible();
     // Numbers are formatted with locale grouping (e.g. "739,017"). The brief
     // says `<n> signals · <m> data points · <ms>ms` — accept commas in n/m.
     await expect(status).toHaveText(/[\d,]+ signals · [\d,]+ data points · \d+ms/);
 
     // (b) Legend is a <ul role="list"> with at least 1 focusable item (button).
-    const legend = page.getByRole("list", { name: /chart legend/i });
+    const legend = main.getByRole("list", { name: /chart legend/i });
     await expect(legend).toBeVisible();
     expect(await legend.evaluate((el) => el.tagName.toLowerCase())).toBe("ul");
     const legendButtons = legend.getByRole("button");
