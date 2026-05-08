@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type CSSProperties } from "react";
+import { isBootstrapContext } from "@/lib/transcript-noise";
 import type { TranscriptItem } from "@/lib/types";
 
 interface TurnCardProps {
@@ -19,6 +20,12 @@ const TOOL_LIKE = new Set(["tool", "tool_result", "bashexecution"]);
  * Single transcript turn. Default-collapsed when content is taller than
  * `linesPerTurn`; the "Show more" button reveals the rest. The wrapping
  * `data-turn-card` attribute is the scroll target for the TOC.
+ *
+ * Bootstrap context turns (T12 — `pi-opentelemetry.resource_snapshot`,
+ * `custom`/`context` harness wiring) start collapsed *regardless of
+ * length* and surface a "Show bootstrap context" affordance. Once the
+ * user opens them they stay open for the rest of the page lifetime;
+ * reload returns them to the collapsed default.
  */
 export function TurnCard({
   item,
@@ -26,6 +33,10 @@ export function TurnCard({
   expandSignal,
   collapseSignal,
 }: TurnCardProps) {
+  const isBootstrap = isBootstrapContext({
+    role: item.role,
+    content: item.content,
+  });
   const [expanded, setExpanded] = useState(false);
   const [lastExpand, setLastExpand] = useState<number | null>(null);
   const [lastCollapse, setLastCollapse] = useState<number | null>(null);
@@ -40,7 +51,10 @@ export function TurnCard({
 
   const tokenEstimate = estimateTokens(item.content);
   const lineCount = countLines(item.content);
-  const isTruncated = lineCount > linesPerTurn;
+  // Bootstrap turns are *always* collapsible — the resource_snapshot can
+  // be a single very long line that the line-clamp would otherwise miss.
+  const isTruncated = isBootstrap || lineCount > linesPerTurn;
+  const showContent = !isBootstrap || expanded;
   const collapsedStyle: CSSProperties = expanded
     ? {}
     : {
@@ -50,10 +64,27 @@ export function TurnCard({
         overflow: "hidden",
       };
 
+  const toggleLabel = isBootstrap
+    ? "Show bootstrap context"
+    : expanded
+      ? "Show less"
+      : "Show more";
+  // Bootstrap turns: once revealed, the user keeps it open for the
+  // page lifetime (T12 constraint — no per-card "Hide" toggle). The
+  // button itself stays in the DOM with the same label so screen
+  // readers can still read aria-expanded; clicks become a no-op once
+  // expanded. Non-bootstrap turns keep the legacy toggle behavior.
+  const onToggleClick = (): void => {
+    if (isBootstrap && expanded) return;
+    setExpanded((prev) => !prev);
+  };
+  const showToggle = isTruncated || isBootstrap;
+
   return (
     <article
       data-turn-card={item.index}
       data-role={item.role}
+      data-bootstrap={isBootstrap ? "true" : undefined}
       tabIndex={-1}
       className={`border-border bg-surface focus:outline-none flex scroll-mt-4 flex-col gap-2 rounded-md border-l-2 border-y border-r p-3 ${roleAccent(item.role)}`}
     >
@@ -65,20 +96,23 @@ export function TurnCard({
         <span className="tabular-nums">{item.skillCount} skills</span>
         <span className="tabular-nums">~{tokenEstimate} tokens</span>
       </header>
-      <pre
-        className="text-text-secondary m-0 whitespace-pre-wrap break-words font-mono text-xs leading-relaxed"
-        style={collapsedStyle}
-      >
-        {item.content}
-      </pre>
-      {isTruncated ? (
+      {showContent ? (
+        <pre
+          className="text-text-secondary m-0 whitespace-pre-wrap break-words font-mono text-xs leading-relaxed"
+          style={collapsedStyle}
+        >
+          {item.content}
+        </pre>
+      ) : null}
+      {showToggle ? (
         <button
           type="button"
           aria-expanded={expanded}
-          onClick={() => setExpanded((prev) => !prev)}
-          className="text-accent hover:text-text self-start text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55"
+          onClick={onToggleClick}
+          disabled={isBootstrap && expanded}
+          className="text-accent hover:text-text self-start text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55 disabled:cursor-default disabled:opacity-60"
         >
-          {expanded ? "Show less" : "Show more"}
+          {toggleLabel}
         </button>
       ) : null}
     </article>

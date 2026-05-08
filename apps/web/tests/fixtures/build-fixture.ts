@@ -199,6 +199,29 @@ const fixtureSpecs: FixtureSpec[] = [
     mtimeMs: baseTime + 6 * 60 * 60 * 1000,
     sizeBytes: 32_768,
   },
+  {
+    // T12 fixture: a Pi session whose first turn is the bootstrap
+    // resource_snapshot. The transcript split lowercases `Custom` to
+    // `custom` and lifts the role prefix off the content, so the body
+    // we materialize on disk is `custom: pi-opentelemetry.resource_snapshot {…}`.
+    // After split: role = "custom", content begins with
+    // "pi-opentelemetry.resource_snapshot" — matches both predicate
+    // legs in transcript-noise.ts.
+    provider: "pi",
+    sessionId: "pi:fixture-bootstrap-008",
+    title: "Pi bootstrap fixture",
+    startedAt: new Date(baseTime + 7 * 60 * 60 * 1000).toISOString(),
+    cwd: "/Users/alex/Personal/Projects/session-review",
+    body: [
+      'custom: pi-opentelemetry.resource_snapshot {"activeTools":[{"name":"bash","sourcePackage":"core"},{"name":"read","sourcePackage":"core"}],"allTools":[{"name":"bash","sourcePackage":"core"},{"name":"read","sourcePackage":"core"},{"name":"write","sourcePackage":"core"}]}',
+      "user: triage the failing release pipeline",
+      "assistant: pulling logs and reviewing the most recent deploy",
+      "tool: bash",
+      "tool_result: pipeline failed at lint step",
+    ].join("\n"),
+    mtimeMs: baseTime + 7 * 60 * 60 * 1000,
+    sizeBytes: 4096,
+  },
 ];
 
 const sessions: SessionDocument[] = fixtureSpecs.map((spec) => ({
