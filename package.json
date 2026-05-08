@@ -8,28 +8,40 @@
   },
   "scripts": {
     "build": "tsc",
-    "check": "tsc --noEmit",
+    "check": "tsc --noEmit && tsc --noEmit -p apps/web/tsconfig.json",
     "start": "tsx src/cli.ts",
     "ingest": "tsx src/cli.ts ingest --all",
     "search": "tsx src/cli.ts search",
-    "lint": "eslint src/**/*.ts",
-    "dev": "tsx src/server.ts",
-    "app": "npm run build && node dist/server.js",
+    "lint": "eslint \"src/**/*.ts\" \"apps/web/**/*.{ts,tsx}\"",
+    "dev": "next dev apps/web -p 8765",
+    "app": "next start apps/web -p 8765",
     "derive": "tsx src/cli.ts derive",
-    "e2e:screenshots": "node tests/e2e-session-page.mjs"
+    "e2e:screenshots": "node tests/e2e-session-page.mjs",
+    "e2e:web": "playwright test --config apps/web/playwright.config.ts"
   },
   "dependencies": {
     "@highlightjs/cdn-assets": "^11.11.1",
     "better-sqlite3": "^11.8.1",
     "chart.js": "^4.5.1",
-    "highlight.js": "^11.11.1"
+    "highlight.js": "^11.11.1",
+    "next": "^15.0.3",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@next/eslint-plugin-next": "^15.0.3",
+    "@playwright/test": "^1.59.1",
+    "@tailwindcss/postcss": "^4.0.0",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.13.1",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
     "eslint": "^10.2.1",
     "playwright": "^1.59.1",
+    "prettier": "^3.4.2",
+    "prettier-plugin-tailwindcss": "^0.6.11",
+    "tailwindcss": "^4.0.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.59.0"
