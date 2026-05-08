@@ -303,10 +303,21 @@ function LinkedColumn({ items, loading }: LinkedColumnProps) {
   );
 }
 
+// Locale-independent format so SSR and client hydration agree. Server runs
+// Node (defaults to en-US "Jan 16, 2026"); client uses the user's locale
+// ("16 Jan 2026" on en-AU). Hand-rolled formatting eliminates the mismatch.
+const SHORT_MONTHS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+] as const;
+
 function formatStartedAt(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return `${date.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })} · ${date
-    .toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false })
-    .replace(/\s/g, "")}`;
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = SHORT_MONTHS[date.getMonth()];
+  const year = date.getFullYear();
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${day} ${month} ${year} · ${hours}:${minutes}`;
 }

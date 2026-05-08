@@ -80,24 +80,31 @@ export function relationFor(row: SearchResult): Relation {
 }
 
 /**
- * Run-time display: locale-formatted date + 24-h time. We do NOT compute a
- * fabricated duration suffix (legacy `tokens / 850` clamp 8–72m) — the data
- * layer doesn't track session duration and we won't invent it.
+ * Run-time display: stable date + 24-h time. We do NOT compute a fabricated
+ * duration suffix (legacy `tokens / 850` clamp 8–72m) — the data layer doesn't
+ * track session duration and we won't invent it.
+ *
+ * Format is locale-independent so SSR and client hydration agree. Node defaults
+ * to en-US ("Jan 16, 2026"); browsers default to the user's locale (en-AU →
+ * "16 Jan 2026"). Picking a fixed `"en-US"` locale, or using a hand-rolled
+ * formatter, eliminates the hydration mismatch.
  */
+const SHORT_MONTHS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+] as const;
+
 export function runtimeDisplay(row: SearchResult): RuntimeDisplay {
   if (!row.startedAt) return { date: "", time: "" };
   const d = new Date(row.startedAt);
   if (Number.isNaN(d.getTime())) return { date: "", time: "" };
-  const date = d.toLocaleDateString(undefined, {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-  const time = d.toLocaleTimeString(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = SHORT_MONTHS[d.getMonth()];
+  const year = d.getFullYear();
+  const date = `${day} ${month} ${year}`;
+  const hours = String(d.getHours()).padStart(2, "0");
+  const minutes = String(d.getMinutes()).padStart(2, "0");
+  const time = `${hours}:${minutes}`;
   return { date, time };
 }
 
