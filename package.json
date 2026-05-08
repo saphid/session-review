@@ -17,7 +17,9 @@
     "app": "next start apps/web -p 8765",
     "derive": "tsx src/cli.ts derive",
     "e2e:screenshots": "node tests/e2e-session-page.mjs",
-    "e2e:web": "playwright test --config apps/web/playwright.config.ts"
+    "e2e:web": "playwright test --config apps/web/playwright.config.ts",
+    "fixture:build": "tsx apps/web/tests/fixtures/build-fixture.ts",
+    "test:integration": "tsx --conditions=react-server --test apps/web/tests/integration/*.test.ts"
   },
   "dependencies": {
     "@highlightjs/cdn-assets": "^11.11.1",
