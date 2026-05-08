@@ -6,6 +6,10 @@ coverage/
 .env.*
 *.sqlite
 *.sqlite-*
+
+# Integration test fixture is committed so the suite runs without setup.
+!apps/web/tests/fixtures/sessions.sqlite
+
 .DS_Store
 npm-debug.log*
 
