@@ -209,10 +209,6 @@ async function readJsonBody<T>(request: IncomingMessage, maxBytes: number): Prom
   return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}") as T;
 }
 
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", `'"'"'`)}'`;
-}
-
 async function sendFile(response: ServerResponse, filePath: string, contentType: string): Promise<void> {
   const body = await readFile(filePath);
   response.writeHead(200, { "content-type": contentType });
