@@ -27,19 +27,21 @@ Override DB path:
 npm start -- --db /tmp/sessions.sqlite search "auth"
 ```
 
-## Web app
+## Web app (Next.js)
+
+The web app is a Next.js 15 (App Router) project at `apps/web/`.
 
 ```bash
-npm run app
-# open http://localhost:8765
+npm run dev   # next dev on http://localhost:8765 (development)
+npm run app   # next start on http://localhost:8765 (after `npm run build`)
 ```
 
 If you are launching from another directory, use either a one-line `cd` or npm's prefix flag so npm finds this project's `package.json`:
 
 ```bash
-cd /Users/alexsouthwell/Personal/Projects/session-review && PORT=8999 npm run app
+cd /Users/alexsouthwell/Personal/Projects/session-review && PORT=8999 npm run dev
 # or
-PORT=8999 npm --prefix /Users/alexsouthwell/Personal/Projects/session-review run app
+PORT=8999 npm --prefix /Users/alexsouthwell/Personal/Projects/session-review run dev
 ```
 
 The app supports session search, provider/cwd/path/date filters, grouping by working directory, agent/provider, or primary session + subagents, syntax-highlighted transcript code blocks/shell output, model input/output badges, per-turn estimated token counts, transcript expand/collapse controls by item or item type, a configurable default transcript line limit with per-item “show more”, a right-hand Pi chat sidebar, and tool/skill usage charts over time. Use the `Batch runs` filter to include all sessions, exclude likely batch/orchestration/subagent sessions, or show only those batch sessions. The primary-session grouping detects Pi nested `run-*` sessions and Claude `subagents/` sidechains, linking them to indexed parent logs when available and otherwise grouping them under a synthetic primary key from the path.

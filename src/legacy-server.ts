@@ -115,7 +115,7 @@ function sessionReviewSourceFiles(): string[] {
   return [
     path.join(rootDir, "src", "web", "client.ts"),
     path.join(rootDir, "src", "web", "index.html"),
-    path.join(rootDir, "src", "server.ts"),
+    path.join(rootDir, "src", "legacy-server.ts"),
     path.join(rootDir, "src", "db.ts"),
   ];
 }
