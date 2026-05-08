@@ -1,7 +1,16 @@
 import "server-only";
 
 import path from "node:path";
-import { openDb, type SessionReviewDb } from "@core/db.js";
+import { openDb, sessionHeader as coreSessionHeader, type SessionReviewDb } from "@core/db.js";
+
+/**
+ * Re-exported `sessionHeader` for direct server-component calls. Apps
+ * under `apps/web/app/**` that need the header data (e.g. the session
+ * detail page) consume this rather than reaching across the `@core/*`
+ * alias themselves — the bridge stays the single seam to the data
+ * layer.
+ */
+export const sessionHeader = coreSessionHeader;
 
 const defaultDb = path.join(process.env.HOME ?? ".", ".local", "share", "session-review", "sessions.sqlite");
 
