@@ -673,6 +673,66 @@ export function sessionDetails(db: SessionReviewDb, sessionId: string): SessionD
   return { ...header, transcript };
 }
 
+export interface TopUsageSignal {
+  name: string;
+  count: number;
+}
+
+/**
+ * Top N tool or skill names for a session, ordered by total `count`.
+ * Reads from `usage_signals` only — no derivation, no fabrication, so the
+ * search drawer never needs the legacy `pi-tool-1` placeholder.
+ */
+export function topUsageSignals(db: SessionReviewDb, sessionId: string, kind: "tool" | "skill", limit = 5): TopUsageSignal[] {
+  return db
+    .prepare(
+      "SELECT name, SUM(count) AS count FROM usage_signals WHERE session_id = ? AND kind = ? GROUP BY name ORDER BY count DESC, name ASC LIMIT ?",
+    )
+    .all(sessionId, kind, limit) as TopUsageSignal[];
+}
+
+/**
+ * Linked-session lookup that doesn't require the transcript body — drives
+ * the search row drawer where reading the body would re-introduce the
+ * exact slow path T06 retired. Combines: stored `parent_session_id`,
+ * `parent_path_candidates` (for older rows where the column hasn't been
+ * backfilled), and `siblingPathPrefixes` for delegated/subagent groups.
+ */
+export function linkedSessionsLite(db: SessionReviewDb, sessionId: string): LinkedSession[] {
+  const row = db
+    .prepare("SELECT id AS sessionId, path, parent_session_id AS parentSessionId FROM sessions WHERE id = ? LIMIT 1")
+    .get(sessionId) as { sessionId: string; path: string; parentSessionId: string | null } | undefined;
+  if (!row) return [];
+
+  const linked = new Map<string, LinkedSession>();
+
+  if (row.parentSessionId) {
+    const parentRow = db
+      .prepare("SELECT id AS sessionId, provider, title, started_at AS startedAt, path FROM sessions WHERE id = ? LIMIT 1")
+      .get(row.parentSessionId) as Omit<LinkedSession, "reason"> | undefined;
+    if (parentRow) linked.set(parentRow.sessionId, { ...parentRow, reason: "primary session for this subagent" });
+  } else {
+    const parent = findParentSession(db, sessionId, row.path);
+    if (parent) {
+      const parentRow = db
+        .prepare("SELECT id AS sessionId, provider, title, started_at AS startedAt, path FROM sessions WHERE id = ? LIMIT 1")
+        .get(parent.sessionId) as Omit<LinkedSession, "reason"> | undefined;
+      if (parentRow) linked.set(parentRow.sessionId, { ...parentRow, reason: "primary session for this subagent" });
+    }
+  }
+
+  for (const siblingRoot of siblingPathPrefixes(row.path)) {
+    const nearby = db
+      .prepare("SELECT id AS sessionId, provider, title, started_at AS startedAt, path FROM sessions WHERE id != ? AND path LIKE ? ORDER BY started_at DESC LIMIT 25")
+      .all(sessionId, `${siblingRoot}%`) as Array<Omit<LinkedSession, "reason">>;
+    for (const sibling of nearby) {
+      if (!linked.has(sibling.sessionId)) linked.set(sibling.sessionId, { ...sibling, reason: "same delegated/subagent group" });
+    }
+  }
+
+  return [...linked.values()].slice(0, 25);
+}
+
 export function filterOptions(db: SessionReviewDb): FilterOptions {
   const providers = db.prepare("SELECT DISTINCT provider FROM sessions ORDER BY provider").pluck().all() as string[];
   const cwd = db.prepare("SELECT DISTINCT cwd FROM sessions WHERE cwd IS NOT NULL AND cwd != '' ORDER BY cwd LIMIT 500").pluck().all() as string[];

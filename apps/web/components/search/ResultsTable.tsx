@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { SearchResult } from "@/lib/types";
 import {
   activityMetrics,
@@ -20,6 +20,7 @@ import {
 } from "@/lib/search-display";
 import { MatchPill } from "./MatchPill";
 import { RowActions } from "./RowActions";
+import { RowDrawer } from "./RowDrawer";
 
 interface ResultsTableProps {
   rows: SearchResult[];
@@ -60,6 +61,26 @@ const PROVIDER_GLYPH: Record<string, string> = {
  */
 export function ResultsTable({ rows, searchParams }: ResultsTableProps) {
   const router = useRouter();
+  const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
+
+  // Reset expansion when the result set itself changes — otherwise an open
+  // drawer would point at a row that's no longer in `rows`.
+  useEffect(() => {
+    if (expandedRowId && !rows.some((row) => row.sessionId === expandedRowId)) {
+      setExpandedRowId(null);
+    }
+  }, [expandedRowId, rows]);
+
+  // ESC closes whichever drawer is open. We attach at the document level so
+  // focus inside the drawer (e.g. linked-session links) still triggers.
+  useEffect(() => {
+    if (!expandedRowId) return;
+    const handler = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setExpandedRowId(null);
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [expandedRowId]);
 
   const sortKeyParam = singleString(searchParams.sort);
   const sortDirParam = singleString(searchParams.dir);
@@ -86,6 +107,10 @@ export function ResultsTable({ rows, searchParams }: ResultsTableProps) {
     },
     [activeDir, activeSort, router, searchParams],
   );
+
+  const onRowToggle = useCallback((sessionId: string) => {
+    setExpandedRowId((current) => (current === sessionId ? null : sessionId));
+  }, []);
 
   return (
     <div className="border-border overflow-x-auto rounded-md border">
@@ -149,7 +174,15 @@ export function ResultsTable({ rows, searchParams }: ResultsTableProps) {
               </td>
             </tr>
           ) : (
-            rows.map((row) => <Row key={row.sessionId} row={row} />)
+            rows.map((row) => (
+              <Row
+                key={row.sessionId}
+                row={row}
+                expanded={expandedRowId === row.sessionId}
+                onToggle={onRowToggle}
+                onClose={() => setExpandedRowId(null)}
+              />
+            ))
           )}
         </tbody>
       </table>
@@ -232,9 +265,12 @@ function SortableTh({
 
 interface RowProps {
   row: SearchResult;
+  expanded: boolean;
+  onToggle: (sessionId: string) => void;
+  onClose: () => void;
 }
 
-function Row({ row }: RowProps) {
+function Row({ row, expanded, onToggle, onClose }: RowProps) {
   const title = displayTitle(row);
   const subtitle = displaySubtitle(row);
   const project = projectLabel(row);
@@ -242,71 +278,110 @@ function Row({ row }: RowProps) {
   const { date, time } = runtimeDisplay(row);
   const { tokens, tools } = activityMetrics(row);
 
+  // Click anywhere on the row toggles the drawer, but we exclude clicks
+  // that originate inside an interactive control (the row-action cluster,
+  // copy buttons, links) so the drawer doesn't fight the inner widgets.
+  const onRowClick = (event: React.MouseEvent<HTMLTableRowElement>) => {
+    const target = event.target as HTMLElement;
+    if (target.closest("button, a, input, select, textarea")) return;
+    onToggle(row.sessionId);
+  };
+
+  const onRowKey = (event: React.KeyboardEvent<HTMLTableRowElement>) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const target = event.target as HTMLElement;
+    if (target !== event.currentTarget) return;
+    event.preventDefault();
+    onToggle(row.sessionId);
+  };
+
   return (
-    <tr
-      data-session-id={row.sessionId}
-      className="border-border hover:bg-surface-low border-b align-middle last:border-b-0"
-    >
-      <td className="px-3 py-2 text-center">
-        <span
-          aria-hidden="true"
-          className="text-text-secondary inline-flex h-6 w-6 items-center justify-center rounded font-mono text-sm"
-          title={row.provider}
-        >
-          {PROVIDER_GLYPH[row.provider] ?? row.provider[0]?.toUpperCase()}
-        </span>
-        <span className="sr-only">{row.provider}</span>
-      </td>
-      <td className="min-w-0 px-3 py-2">
-        <div className="flex flex-col gap-0.5">
-          <span className="text-text truncate text-sm font-semibold leading-tight">
-            {title}
-          </span>
-          <span className="text-muted truncate text-xs leading-snug">
-            {subtitle}
-          </span>
-        </div>
-      </td>
-      <td className="text-text-secondary truncate px-3 py-2 text-sm">
-        {project}
-      </td>
-      <td className="px-3 py-2 align-middle">
-        <RelationCell relation={relation} />
-      </td>
-      <td className="px-3 py-2 text-sm tabular-nums">
-        <div className="flex flex-col gap-0.5 leading-tight">
-          <span className="text-text-secondary">{date || "—"}</span>
-          <span className="text-muted text-xs">{time || ""}</span>
-        </div>
-      </td>
-      <td
-        className="px-3 py-2 text-sm tabular-nums"
-        data-testid="activity-cell"
+    <>
+      <tr
+        data-session-id={row.sessionId}
+        data-expanded={expanded ? "true" : "false"}
+        onClick={onRowClick}
+        onKeyDown={onRowKey}
+        tabIndex={0}
+        aria-expanded={expanded}
+        className="border-border hover:bg-surface-low focus-visible:ring-accent/55 cursor-pointer border-b align-middle last:border-b-0 focus-visible:outline-none focus-visible:ring-2"
       >
-        <div className="flex items-center gap-3">
+        <td className="px-3 py-2 text-center">
           <span
-            className="text-text inline-flex items-baseline gap-1"
-            title="Estimated tokens"
+            aria-hidden="true"
+            className="text-text-secondary inline-flex h-6 w-6 items-center justify-center rounded font-mono text-sm"
+            title={row.provider}
           >
-            <span className="font-medium">{formatTokens(tokens)}</span>
-            <span className="text-muted text-[10px] uppercase">tok</span>
+            {PROVIDER_GLYPH[row.provider] ?? row.provider[0]?.toUpperCase()}
           </span>
-          <span
-            className="text-text inline-flex items-baseline gap-1"
-            title="Tool uses"
-          >
-            <span className="font-medium">{tools}</span>
-            <span className="text-muted text-[10px] uppercase">tools</span>
-          </span>
-        </div>
-      </td>
-      <td className="px-3 py-2 align-middle" data-testid="match-cell">
-        <MatchPill score={row.matchScore} />
-      </td>
-      <td className="px-3 py-2">
-        <RowActions row={row} />
-      </td>
-    </tr>
+          <span className="sr-only">{row.provider}</span>
+        </td>
+        <td className="min-w-0 px-3 py-2">
+          <div className="flex flex-col gap-0.5">
+            <span className="text-text truncate text-sm font-semibold leading-tight">
+              {title}
+            </span>
+            <span className="text-muted truncate text-xs leading-snug">
+              {subtitle}
+            </span>
+          </div>
+        </td>
+        <td className="text-text-secondary truncate px-3 py-2 text-sm">
+          {project}
+        </td>
+        <td className="px-3 py-2 align-middle">
+          <RelationCell relation={relation} />
+        </td>
+        <td className="px-3 py-2 text-sm tabular-nums">
+          <div className="flex flex-col gap-0.5 leading-tight">
+            <span className="text-text-secondary">{date || "—"}</span>
+            <span className="text-muted text-xs">{time || ""}</span>
+          </div>
+        </td>
+        <td
+          className="px-3 py-2 text-sm tabular-nums"
+          data-testid="activity-cell"
+        >
+          <div className="flex items-center gap-3">
+            <span
+              className="text-text inline-flex items-baseline gap-1"
+              title="Estimated tokens"
+            >
+              <span className="font-medium">{formatTokens(tokens)}</span>
+              <span className="text-muted text-[10px] uppercase">tok</span>
+            </span>
+            <span
+              className="text-text inline-flex items-baseline gap-1"
+              title="Tool uses"
+            >
+              <span className="font-medium">{tools}</span>
+              <span className="text-muted text-[10px] uppercase">tools</span>
+            </span>
+          </div>
+        </td>
+        <td className="px-3 py-2 align-middle" data-testid="match-cell">
+          <MatchPill score={row.matchScore} />
+        </td>
+        <td className="px-3 py-2">
+          <RowActions row={row} />
+        </td>
+      </tr>
+      {expanded ? (
+        <tr
+          data-session-id={`${row.sessionId}-drawer`}
+          className="bg-surface-low"
+        >
+          <td colSpan={8} className="p-0">
+            <RowDrawer
+              sessionId={row.sessionId}
+              path={row.path}
+              cwd={row.cwd}
+              onClose={onClose}
+            />
+          </td>
+        </tr>
+      ) : null}
+    </>
   );
 }
 

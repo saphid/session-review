@@ -8,6 +8,7 @@ export type {
   SessionFilters,
   SessionReviewDb,
   SessionTurnPoint,
+  TopUsageSignal,
   TranscriptItem,
   UsagePoint,
   UsageSummaryRow,
