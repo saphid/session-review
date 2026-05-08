@@ -7,6 +7,9 @@ import type { IngestSummary, ProviderId, SearchResult, SessionDocument } from ".
 
 export type SessionReviewDb = Database.Database;
 
+export type SessionSortField = "match" | "runtime" | "activity";
+export type SessionSortDir = "asc" | "desc";
+
 export interface SessionFilters {
   provider: ProviderId | null;
   query: string | null;
@@ -16,6 +19,8 @@ export interface SessionFilters {
   endDate: string | null;
   batchMode: BatchMode;
   limit: number;
+  sort?: SessionSortField | null;
+  dir?: SessionSortDir | null;
 }
 
 export interface UsagePoint {
@@ -271,7 +276,7 @@ export function searchFilteredSessions(db: SessionReviewDb, filters: SessionFilt
         FROM sessions s
         LEFT JOIN sessions parent ON parent.id = s.parent_session_id
         ${sessionClauses.length ? `WHERE ${sessionClauses.join(" AND ")}` : ""}
-        ORDER BY s.started_at DESC
+        ${noQueryOrderBy(filters)}
         LIMIT @limit
       `)
       .all(params) as RawSearchResult[];
@@ -302,10 +307,53 @@ export function searchFilteredSessions(db: SessionReviewDb, filters: SessionFilt
       JOIN sessions s ON s.id = matched.session_id
       LEFT JOIN sessions parent ON parent.id = s.parent_session_id
       ${sessionClauses.length ? `WHERE ${sessionClauses.join(" AND ")}` : ""}
-      ORDER BY matched.rawRank
+      ${queryOrderBy(filters)}
     `)
     .all(params) as RawSearchResult[];
   return enrichSearchResults(rows);
+}
+
+/**
+ * ORDER BY clause for the no-query branch. Hardcoded mapping (no string
+ * interpolation from input) so the SQL stays injection-safe even though the
+ * sort/dir come from URL params.
+ *
+ * `sort=match` is meaningless without a query (no rawRank exists), so it
+ * silently falls back to the default `started_at DESC` rather than erroring.
+ */
+function noQueryOrderBy(filters: SessionFilters): string {
+  const dir = filters.dir === "asc" ? "ASC" : "DESC";
+  switch (filters.sort) {
+    case "runtime":
+      return `ORDER BY s.started_at ${dir}`;
+    case "activity":
+      return `ORDER BY s.size_bytes ${dir}`;
+    case "match":
+    default:
+      return "ORDER BY s.started_at DESC";
+  }
+}
+
+/**
+ * ORDER BY clause for the FTS-matched branch. `rawRank` from bm25() is
+ * "lower is better", so dir=desc (best first) maps to `rawRank ASC` and
+ * dir=asc (worst first) maps to `rawRank DESC` — see enrichSearchResults
+ * for the matching matchScore normalization.
+ */
+function queryOrderBy(filters: SessionFilters): string {
+  const dir = filters.dir === "asc" ? "ASC" : "DESC";
+  switch (filters.sort) {
+    case "match": {
+      const rankDir = filters.dir === "asc" ? "DESC" : "ASC";
+      return `ORDER BY matched.rawRank ${rankDir}`;
+    }
+    case "runtime":
+      return `ORDER BY s.started_at ${dir}`;
+    case "activity":
+      return `ORDER BY s.size_bytes ${dir}`;
+    default:
+      return "ORDER BY matched.rawRank";
+  }
 }
 
 function enrichSearchResults(rows: RawSearchResult[]): SearchResult[] {

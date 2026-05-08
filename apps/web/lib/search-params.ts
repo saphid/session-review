@@ -17,7 +17,10 @@ import type { ProviderId } from "@core/types.js";
 export const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 500;
 
-export type SortField = "runTime" | "activity" | "match";
+// Matches the URL token written by `ResultsTable` headers (`?sort=runtime`)
+// and the SQL switch in `searchFilteredSessions`. Keep the names in sync
+// with `apps/web/lib/search-display.ts#SortKey`.
+export type SortField = "runtime" | "activity" | "match";
 export type SortDir = "asc" | "desc";
 
 export interface ParsedSearchParams {
@@ -122,6 +125,8 @@ export function toFilters(params: ParsedSearchParams): {
   endDate: string | null;
   batchMode: BatchMode;
   limit: number;
+  sort: SortField | null;
+  dir: SortDir | null;
 } {
   return {
     provider: params.provider === "" ? null : params.provider,
@@ -132,6 +137,11 @@ export function toFilters(params: ParsedSearchParams): {
     endDate: params.endDate || null,
     batchMode: params.batchMode,
     limit: params.limit,
+    // SSR honors the URL sort/dir so the first paint matches the query string.
+    // When the URL omits `sort` we leave both null and let the SQL fall back
+    // to its default ordering (rawRank for query, started_at DESC otherwise).
+    sort: params.sort === "" ? null : params.sort,
+    dir: params.sort === "" ? null : params.dir,
   };
 }
 
@@ -153,7 +163,7 @@ function parseLimit(value: string): number {
 }
 
 function parseSort(value: string): SortField | "" {
-  return value === "runTime" || value === "activity" || value === "match" ? value : "";
+  return value === "runtime" || value === "activity" || value === "match" ? value : "";
 }
 
 function parseDir(value: string): SortDir {

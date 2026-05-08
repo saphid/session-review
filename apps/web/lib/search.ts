@@ -2,7 +2,7 @@ import "server-only";
 
 import type { BatchMode } from "@core/analytics.js";
 import type { ProviderId } from "@core/types.js";
-import type { SessionFilters } from "@core/db.js";
+import type { SessionFilters, SessionSortDir, SessionSortField } from "@core/db.js";
 
 export const DEFAULT_SEARCH_LIMIT = 100;
 const MAX_SEARCH_LIMIT = 500;
@@ -11,6 +11,11 @@ const MAX_SEARCH_LIMIT = 500;
  * Parses the URLSearchParams of an `/api/search` request into a `SessionFilters`
  * object the data layer accepts. Mirrors the legacy server in
  * `src/legacy-server.ts` so the bridge keeps the same query contract.
+ *
+ * Sort/dir come straight from the URL (T18). Only the allowlisted values are
+ * recognized — anything else falls back to `null` so `searchFilteredSessions`
+ * uses its default ordering. The SQL itself never substitutes user-controlled
+ * strings into ORDER BY (see `noQueryOrderBy`/`queryOrderBy` in `src/db.ts`).
  */
 export function parseSearchFilters(params: URLSearchParams): SessionFilters {
   return {
@@ -22,6 +27,8 @@ export function parseSearchFilters(params: URLSearchParams): SessionFilters {
     endDate: emptyToNull(params.get("endDate")),
     batchMode: parseBatchMode(params.get("batchMode")),
     limit: parseLimit(params.get("limit")),
+    sort: parseSort(params.get("sort")),
+    dir: parseDir(params.get("dir")),
   };
 }
 
@@ -42,4 +49,12 @@ function parseLimit(value: string | null): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_SEARCH_LIMIT;
   return Math.min(Math.floor(parsed), MAX_SEARCH_LIMIT);
+}
+
+function parseSort(value: string | null): SessionSortField | null {
+  return value === "match" || value === "runtime" || value === "activity" ? value : null;
+}
+
+function parseDir(value: string | null): SessionSortDir | null {
+  return value === "asc" || value === "desc" ? value : null;
 }
