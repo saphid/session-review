@@ -19,6 +19,7 @@ import {
   type SortKey,
 } from "@/lib/search-display";
 import { MatchPill } from "./MatchPill";
+import { ResultCard } from "./ResultCard";
 import { RowActions } from "./RowActions";
 
 interface ResultsTableProps {
@@ -88,72 +89,92 @@ export function ResultsTable({ rows, searchParams }: ResultsTableProps) {
   );
 
   return (
-    <div className="border-border overflow-x-auto rounded-md border">
-      <table
-        aria-label="Sessions results"
-        className="border-collapse text-sm"
-        style={{ minWidth: "1060px", width: "100%" }}
+    <>
+      {/* Mobile (<720 px): stacked card layout. The desktop table is
+       * `min-width: 1060px` which forces horizontal scroll on phones. We
+       * render both surfaces and let the responsive class hide the wrong
+       * one — keeps server-side data flow identical for both. */}
+      <div
+        className="flex flex-col gap-2 md:hidden"
+        data-testid="results-card-list"
       >
-        <thead className="bg-surface-low text-muted-strong border-border border-b">
-          <tr>
-            <Th width="56px">Agent</Th>
-            <Th width="auto" align="left">
-              Task
-            </Th>
-            <Th width="170px" align="left">
-              Project
-            </Th>
-            <Th width="140px" align="left">
-              Relation
-            </Th>
-            <SortableTh
-              testId="th-runtime"
-              sortKey="runtime"
-              label="Run time"
-              activeSort={activeSort}
-              activeDir={activeDir}
-              onSort={onSort}
-              width="130px"
-            />
-            <SortableTh
-              testId="th-activity"
-              sortKey="activity"
-              label="Activity"
-              activeSort={activeSort}
-              activeDir={activeDir}
-              onSort={onSort}
-              width="160px"
-            />
-            <SortableTh
-              testId="th-match"
-              sortKey="match"
-              label="Match"
-              activeSort={activeSort}
-              activeDir={activeDir}
-              onSort={onSort}
-              width="80px"
-            />
-            <Th width="130px">
-              <span className="sr-only">Actions</span>
-            </Th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.length === 0 ? (
+        {rows.length === 0 ? (
+          <p
+            className="text-muted border-border bg-surface rounded-md border px-4 py-6 text-center text-sm"
+          >
+            No sessions match the current filters.
+          </p>
+        ) : (
+          rows.map((row) => <ResultCard key={row.sessionId} row={row} />)
+        )}
+      </div>
+      <div className="border-border hidden overflow-x-auto rounded-md border md:block">
+        <table
+          aria-label="Sessions results"
+          className="border-collapse text-sm"
+          style={{ minWidth: "1060px", width: "100%" }}
+        >
+          <thead className="bg-surface-low text-muted-strong border-border border-b">
             <tr>
-              <td
-                colSpan={8}
-                className="text-muted px-4 py-6 text-center text-sm"
-              >
-                No sessions match the current filters.
-              </td>
+              <Th width="56px">Agent</Th>
+              <Th width="auto" align="left">
+                Task
+              </Th>
+              <Th width="170px" align="left">
+                Project
+              </Th>
+              <Th width="140px" align="left">
+                Relation
+              </Th>
+              <SortableTh
+                testId="th-runtime"
+                sortKey="runtime"
+                label="Run time"
+                activeSort={activeSort}
+                activeDir={activeDir}
+                onSort={onSort}
+                width="130px"
+              />
+              <SortableTh
+                testId="th-activity"
+                sortKey="activity"
+                label="Activity"
+                activeSort={activeSort}
+                activeDir={activeDir}
+                onSort={onSort}
+                width="160px"
+              />
+              <SortableTh
+                testId="th-match"
+                sortKey="match"
+                label="Match"
+                activeSort={activeSort}
+                activeDir={activeDir}
+                onSort={onSort}
+                width="80px"
+              />
+              <Th width="130px">
+                <span className="sr-only">Actions</span>
+              </Th>
             </tr>
-          ) : (
-            rows.map((row) => <Row key={row.sessionId} row={row} />)
-          )}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={8}
+                  className="text-muted px-4 py-6 text-center text-sm"
+                >
+                  No sessions match the current filters.
+                </td>
+              </tr>
+            ) : (
+              rows.map((row) => <Row key={row.sessionId} row={row} />)
+            )}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 

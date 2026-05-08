@@ -7,6 +7,16 @@ import { NavLink } from "./NavLink";
 const DRAWER_NAV_ITEM =
   "flex items-center gap-3 rounded-md px-3 py-3 text-sm text-text-secondary transition-colors hover:bg-surface-raised hover:text-text aria-[current=page]:bg-accent-soft aria-[current=page]:text-text aria-[current=page]:shadow-[inset_3px_0_var(--color-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55 focus-visible:ring-offset-0";
 
+interface MobileNavProps {
+  /**
+   * Real session count label (e.g. "8" or "100+") computed in the
+   * server-only `AppShell`. Mirrors the desktop `Sidebar` badge so the
+   * mobile drawer never collapses to the em-dash placeholder
+   * (mobile fail #2 in `docs/review/10-mobile.md`).
+   */
+  sessionsCountLabel: string;
+}
+
 /**
  * Mobile navigation: a hamburger trigger plus an off-canvas drawer.
  * Only visible below the 720 px breakpoint (`md:hidden`).
@@ -16,7 +26,7 @@ const DRAWER_NAV_ITEM =
  *   - When open, body scroll is locked via a class on `document.body`.
  *   - Escape closes the drawer.
  */
-export function MobileNav() {
+export function MobileNav({ sessionsCountLabel }: MobileNavProps) {
   const [open, setOpen] = useState(false);
 
   const close = useCallback(() => setOpen(false), []);
@@ -74,6 +84,13 @@ export function MobileNav() {
               ▣
             </span>
             <span className="flex-1">Sessions</span>
+            <span
+              className="bg-surface-raised text-muted-strong inline-flex min-w-max justify-center rounded px-1.5 text-xs"
+              aria-hidden="true"
+              data-slot="sessions-count"
+            >
+              {sessionsCountLabel}
+            </span>
           </NavLink>
           <NavLink href="/tools" className={DRAWER_NAV_ITEM} onNavigate={close}>
             <span aria-hidden="true" className="font-mono text-sm">

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { getSessionsCount } from "@/lib/sessions-count";
 import { NavLink } from "./NavLink";
 
 const NAV_ITEM_BASE =
@@ -10,6 +11,7 @@ const NAV_ITEM_BASE =
  * sidebar collapses into the off-canvas drawer driven by `MobileNav`.
  */
 export function Sidebar() {
+  const { label } = getSessionsCount();
   return (
     <aside
       aria-label="Primary navigation"
@@ -35,11 +37,11 @@ export function Sidebar() {
           </span>
           <span className="flex-1">Sessions</span>
           <span
-            className="bg-surface-raised text-muted-strong inline-flex min-w-[1.75rem] justify-center rounded px-1.5 text-xs"
+            className="bg-surface-raised text-muted-strong inline-flex min-w-max justify-center rounded px-1.5 text-xs"
             aria-hidden="true"
             data-slot="sessions-count"
           >
-            —
+            {label}
           </span>
         </NavLink>
         <NavLink href="/tools" className={NAV_ITEM_BASE}>
