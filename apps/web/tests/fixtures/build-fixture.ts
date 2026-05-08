@@ -114,6 +114,42 @@ const sessions: SessionDocument[] = [
     mtimeMs: baseTime + 4 * 60 * 60 * 1000,
     sizeBytes: 16_384,
   },
+  // T05 — primary + subagent pair so the parent_session_id JOIN has at least one
+  // populated row to exercise. The subagent path matches `parentPathCandidates`:
+  // `/fixtures/claude/primary-006/subagents/sub-007.jsonl` →
+  // `/fixtures/claude/primary-006.jsonl` (the parent).
+  {
+    provider: "claude",
+    sessionId: "claude:fixture-006-primary",
+    path: "/fixtures/claude/primary-006.jsonl",
+    title: "Primary session for subagent",
+    startedAt: new Date(baseTime + 5 * 60 * 60 * 1000).toISOString(),
+    cwd: "/Users/alex/Personal/Projects/session-review",
+    body: [
+      "user: spawn a subagent to check the rebuild plan",
+      "assistant: dispatching",
+      "tool: bash",
+      "tool: read",
+    ].join("\n"),
+    mtimeMs: baseTime + 5 * 60 * 60 * 1000,
+    sizeBytes: 4096,
+  },
+  {
+    provider: "claude",
+    sessionId: "claude:fixture-007-subagent",
+    path: "/fixtures/claude/primary-006/subagents/sub-007.jsonl",
+    title: "Subagent of primary 006",
+    startedAt: new Date(baseTime + 5 * 60 * 60 * 1000 + 60_000).toISOString(),
+    cwd: "/Users/alex/Personal/Projects/session-review",
+    body: [
+      "user: review the rebuild plan",
+      "assistant: reading",
+      "tool: read",
+      "tool: grep",
+    ].join("\n"),
+    mtimeMs: baseTime + 5 * 60 * 60 * 1000 + 60_000,
+    sizeBytes: 2048,
+  },
 ];
 
 let inserted = 0;
