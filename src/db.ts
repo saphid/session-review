@@ -61,7 +61,12 @@ export interface LinkedSession {
   reason: string;
 }
 
-type RawSearchResult = Omit<SearchResult, "isBatch" | "isSubagent" | "parentSessionId" | "parentTitle" | "groupKey" | "groupLabel" | "groupReason" | "matchScore"> & { isBatch: number; rawRank: number | null };
+type RawSearchResult = Omit<SearchResult, "isBatch" | "isSubagent" | "parentSessionId" | "parentTitle" | "groupKey" | "groupLabel" | "groupReason" | "matchScore"> & {
+  isBatch: number;
+  rawRank: number | null;
+  parentSessionId: string | null;
+  parentTitle: string | null;
+};
 
 type ParentLookupRow = { sessionId: string; title: string | null; startedAt: string | null; path: string };
 
@@ -154,6 +159,8 @@ function migrate(db: SessionReviewDb): void {
     CREATE INDEX IF NOT EXISTS idx_extension_usage_session ON extension_usage_signals(session_id);
   `);
   ensureColumn(db, "sessions", "is_batch", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "sessions", "parent_session_id", "TEXT");
+  ensureColumn(db, "sessions", "parent_title", "TEXT");
 }
 
 function ensureColumn(db: SessionReviewDb, table: string, column: string, definition: string): void {
@@ -175,10 +182,15 @@ function writeSession(db: SessionReviewDb, doc: SessionDocument): void {
   const isBatch = classifyBatchSession({ provider: doc.provider, path: doc.path, title: doc.title, cwd: doc.cwd, body: doc.body }) ? 1 : 0;
   const signals = extractUsageSignals(doc.body);
   const extensionSignals = extractExtensionUsageSignals(doc.body);
+  // Resolve parent at ingest time so search avoids the per-row lookup. Parents
+  // ingested later are picked up by the `derive` backfill (rebuildDerived).
+  const parent = findParentSession(db, doc.sessionId, doc.path);
+  const parentSessionId = parent?.sessionId ?? null;
+  const parentTitle = parent?.title ?? null;
   const tx = db.transaction(() => {
     db.prepare(`
-      INSERT INTO sessions (id, provider, path, title, started_at, cwd, mtime_ms, size_bytes, indexed_at, is_batch)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO sessions (id, provider, path, title, started_at, cwd, mtime_ms, size_bytes, indexed_at, is_batch, parent_session_id, parent_title)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         provider = excluded.provider,
         path = excluded.path,
@@ -188,8 +200,10 @@ function writeSession(db: SessionReviewDb, doc: SessionDocument): void {
         mtime_ms = excluded.mtime_ms,
         size_bytes = excluded.size_bytes,
         indexed_at = excluded.indexed_at,
-        is_batch = excluded.is_batch
-    `).run(doc.sessionId, doc.provider, doc.path, doc.title, doc.startedAt, doc.cwd, doc.mtimeMs, doc.sizeBytes, new Date().toISOString(), isBatch);
+        is_batch = excluded.is_batch,
+        parent_session_id = excluded.parent_session_id,
+        parent_title = excluded.parent_title
+    `).run(doc.sessionId, doc.provider, doc.path, doc.title, doc.startedAt, doc.cwd, doc.mtimeMs, doc.sizeBytes, new Date().toISOString(), isBatch, parentSessionId, parentTitle);
     db.prepare("DELETE FROM sessions_fts WHERE session_id = ?").run(doc.sessionId);
     db.prepare("DELETE FROM usage_signals WHERE session_id = ?").run(doc.sessionId);
     db.prepare("DELETE FROM extension_usage_signals WHERE session_id = ?").run(doc.sessionId);
@@ -230,14 +244,17 @@ export function searchFilteredSessions(db: SessionReviewDb, filters: SessionFilt
                CAST(s.size_bytes / 4 AS INTEGER) AS tokenEstimate,
                COALESCE((SELECT SUM(count) FROM usage_signals u WHERE u.session_id = s.id AND u.kind = 'tool'), 0) AS toolUseCount,
                NULL AS snippet,
-               NULL AS rawRank
+               NULL AS rawRank,
+               s.parent_session_id AS parentSessionId,
+               COALESCE(parent.title, s.parent_title) AS parentTitle
         FROM sessions s
+        LEFT JOIN sessions parent ON parent.id = s.parent_session_id
         ${sessionClauses.length ? `WHERE ${sessionClauses.join(" AND ")}` : ""}
         ORDER BY s.started_at DESC
         LIMIT @limit
       `)
       .all(params) as RawSearchResult[];
-    return enrichSearchResults(db, rows);
+    return enrichSearchResults(rows);
   }
 
   params.query = filters.query;
@@ -256,18 +273,21 @@ export function searchFilteredSessions(db: SessionReviewDb, filters: SessionFilt
              CAST(s.size_bytes / 4 AS INTEGER) AS tokenEstimate,
              COALESCE((SELECT SUM(count) FROM usage_signals u WHERE u.session_id = s.id AND u.kind = 'tool'), 0) AS toolUseCount,
              snippet(sessions_fts, 4, '[', ']', ' … ', 24) AS snippet,
-             matched.rawRank AS rawRank
+             matched.rawRank AS rawRank,
+             s.parent_session_id AS parentSessionId,
+             COALESCE(parent.title, s.parent_title) AS parentTitle
       FROM matched
       JOIN sessions_fts ON sessions_fts.rowid = matched.rowid
       JOIN sessions s ON s.id = matched.session_id
+      LEFT JOIN sessions parent ON parent.id = s.parent_session_id
       ${sessionClauses.length ? `WHERE ${sessionClauses.join(" AND ")}` : ""}
       ORDER BY matched.rawRank
     `)
     .all(params) as RawSearchResult[];
-  return enrichSearchResults(db, rows);
+  return enrichSearchResults(rows);
 }
 
-function enrichSearchResults(db: SessionReviewDb, rows: RawSearchResult[]): SearchResult[] {
+function enrichSearchResults(rows: RawSearchResult[]): SearchResult[] {
   // bm25() returns a non-positive number where smaller (more negative) means a
   // better match. Normalize the batch to 0..1 (best=1) so the UI can show a
   // real relevance score instead of a fabricated one. When no query was used,
@@ -277,7 +297,7 @@ function enrichSearchResults(db: SessionReviewDb, rows: RawSearchResult[]): Sear
   const maxRank = ranks.length ? Math.max(...ranks) : 0;
   const span = maxRank - minRank;
   return rows.map((row) => {
-    const parent = inferParentInfo(db, row);
+    const parent = parentInfoFromRow(row);
     let matchScore: number | null = null;
     if (typeof row.rawRank === "number" && Number.isFinite(row.rawRank)) {
       matchScore = ranks.length === 1 || span === 0 ? 1 : (maxRank - row.rawRank) / span;
@@ -299,15 +319,17 @@ function enrichSearchResults(db: SessionReviewDb, rows: RawSearchResult[]): Sear
   });
 }
 
-function inferParentInfo(db: SessionReviewDb, row: RawSearchResult | { sessionId: string; provider: ProviderId | string; title: string | null; path: string }): ParentInfo {
-  const parent = findParentSession(db, row.sessionId, row.path);
-  if (parent) {
+function parentInfoFromRow(row: RawSearchResult): ParentInfo {
+  // Parent comes from the JOIN — see searchFilteredSessions. Per-row prepared
+  // lookups (the old `inferParentInfo`) are gone; cf. T05 in the build plan.
+  if (row.parentSessionId) {
+    const title = row.parentTitle?.trim();
     return {
       isSubagent: true,
-      parentSessionId: parent.sessionId,
-      parentTitle: parent.title,
-      groupKey: `primary:${parent.sessionId}`,
-      groupLabel: parent.title?.trim() ? `Primary: ${parent.title.trim()}` : `Primary session ${shortId(parent.sessionId)}`,
+      parentSessionId: row.parentSessionId,
+      parentTitle: row.parentTitle,
+      groupKey: `primary:${row.parentSessionId}`,
+      groupLabel: title ? `Primary: ${title}` : `Primary session ${shortId(row.parentSessionId)}`,
       groupReason: "subagent path points at this primary session",
     };
   }
@@ -449,7 +471,28 @@ export function rebuildDerived(db: SessionReviewDb): number {
     }
   });
   tx();
+  rebuildParentLinks(db);
   return rows.length;
+}
+
+/**
+ * Re-resolve `parent_session_id` / `parent_title` for every row. Idempotent:
+ * the path-based candidate set is deterministic, so re-running this is a no-op
+ * except for sessions whose parents were ingested after they were.
+ */
+export function rebuildParentLinks(db: SessionReviewDb): number {
+  const rows = db.prepare("SELECT id AS sessionId, path FROM sessions").all() as Array<{ sessionId: string; path: string }>;
+  let updated = 0;
+  const tx = db.transaction(() => {
+    const update = db.prepare("UPDATE sessions SET parent_session_id = ?, parent_title = ? WHERE id = ?");
+    for (const row of rows) {
+      const parent = findParentSession(db, row.sessionId, row.path);
+      update.run(parent?.sessionId ?? null, parent?.title ?? null, row.sessionId);
+      if (parent) updated++;
+    }
+  });
+  tx();
+  return updated;
 }
 
 export function sessionDetails(db: SessionReviewDb, sessionId: string): SessionDetails | null {

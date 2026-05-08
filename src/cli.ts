@@ -61,7 +61,7 @@ async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
 
   if (cmd === "derive") {
     const count = rebuildDerived(db);
-    console.log(`Rebuilt tool/skill derived usage for ${count} sessions.`);
+    console.log(`Rebuilt tool/skill derived usage and parent links for ${count} sessions.`);
     return 0;
   }
 
