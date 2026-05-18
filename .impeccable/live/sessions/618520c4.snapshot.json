@@ -1,0 +1,20 @@
+{
+  "id": "618520c4",
+  "phase": "completed",
+  "pageUrl": "/",
+  "sourceFile": "src/web/index.html",
+  "expectedVariants": 3,
+  "arrivedVariants": 3,
+  "visibleVariant": 1,
+  "paramValues": {},
+  "pendingEventSeq": null,
+  "pendingEvent": null,
+  "deliveryLease": null,
+  "checkpointRevision": 8,
+  "activeOwner": "4b577934",
+  "sourceMarkers": {},
+  "fallbackMode": null,
+  "annotationArtifacts": [],
+  "diagnostics": [],
+  "updatedAt": "2026-05-06T23:23:24.535Z"
+}

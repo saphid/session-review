@@ -23,6 +23,11 @@ export function PiInput({ disabled, onSubmit, onStop }: PiInputProps) {
     if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
       submit();
+      return;
+    }
+    if (event.key === "Escape" && disabled && onStop) {
+      event.preventDefault();
+      onStop();
     }
   };
 
@@ -52,7 +57,9 @@ export function PiInput({ disabled, onSubmit, onStop }: PiInputProps) {
         className="border-border bg-field text-text placeholder:text-muted focus-visible:focus-ring w-full resize-none rounded-md border px-3 py-2 text-sm focus-visible:outline-none disabled:opacity-60"
       />
       <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="text-muted text-[11px]">⌘ + Enter to send</span>
+        <span className="text-muted text-[11px]">
+          ⌘ + Enter to send{disabled ? " · Esc to stop" : ""}
+        </span>
         <div className="flex items-center gap-2">
           {disabled && onStop ? (
             <button

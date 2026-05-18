@@ -19,7 +19,7 @@ interface SessionDetailPageProps {
  * id from `params`, loads the header synchronously from SQLite, and
  * renders the page header + 4-stat strip immediately. Transcript items
  * stream in via `<TranscriptPane>`, the client component that consumes
- * the `/api/session?id=…` ndjson endpoint built in T06.
+ * the `/api/session?id=…` ndjson endpoint.
  */
 export default async function SessionDetailPage({
   params,

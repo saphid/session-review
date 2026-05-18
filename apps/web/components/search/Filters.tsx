@@ -1,8 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  EMPTY_PARSED,
   serialize,
   type ParsedSearchParams,
 } from "../../lib/search-params";
@@ -12,6 +13,10 @@ interface FiltersProps {
   initial: ParsedSearchParams;
   /** Number of result rows the server rendered for the current params. */
   resultCount: number;
+}
+
+function hasActiveFilters(params: ParsedSearchParams): boolean {
+  return serialize(params).toString().length > 0;
 }
 
 /**
@@ -54,6 +59,13 @@ export function Filters({ initial, resultCount }: FiltersProps) {
     },
     [pushHref],
   );
+
+  const clearAll = useCallback(() => {
+    setParams(EMPTY_PARSED);
+    pushHref(EMPTY_PARSED);
+  }, [pushHref]);
+
+  const activeFilters = useMemo(() => hasActiveFilters(params), [params]);
 
   // Keyboard shortcut: "/" focuses the search input from non-input elements.
   useEffect(() => {
@@ -116,8 +128,25 @@ export function Filters({ initial, resultCount }: FiltersProps) {
       </div>
 
       <details className="border-border rounded-md border px-3 py-2">
-        <summary className="text-muted cursor-pointer text-xs uppercase tracking-wide">
-          Advanced filters
+        <summary className="text-muted flex cursor-pointer items-center gap-3 text-xs uppercase tracking-wide">
+          <span>Advanced filters</span>
+          {activeFilters ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                // The summary element toggles the details on click; we
+                // don't want clicking "Clear all" to also collapse the
+                // disclosure underneath the user.
+                e.preventDefault();
+                e.stopPropagation();
+                clearAll();
+              }}
+              className="text-accent hover:text-text focus-visible:focus-ring ml-auto rounded px-2 py-0.5 text-[11px] font-medium normal-case tracking-normal focus-visible:outline-none"
+              data-testid="clear-filters"
+            >
+              Clear all
+            </button>
+          ) : null}
         </summary>
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <label className="text-muted flex flex-col gap-1 text-xs uppercase tracking-wide">

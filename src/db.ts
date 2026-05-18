@@ -390,7 +390,8 @@ function enrichSearchResults(rows: RawSearchResult[]): SearchResult[] {
 
 function parentInfoFromRow(row: RawSearchResult): ParentInfo {
   // Parent comes from the JOIN — see searchFilteredSessions. Per-row prepared
-  // lookups (the old `inferParentInfo`) are gone; cf. T05 in the build plan.
+  // parent lookups are intentionally gone; the JOIN keeps search to a single
+  // round trip.
   if (row.parentSessionId) {
     const title = row.parentTitle?.trim();
     return {
@@ -741,8 +742,7 @@ export function topUsageSignals(db: SessionReviewDb, sessionId: string, kind: "t
 
 /**
  * Linked-session lookup that doesn't require the transcript body — drives
- * the search row drawer where reading the body would re-introduce the
- * exact slow path T06 retired. Combines: stored `parent_session_id`,
+ * the search row drawer. Combines: stored `parent_session_id`,
  * `parent_path_candidates` (for older rows where the column hasn't been
  * backfilled), and `siblingPathPrefixes` for delegated/subagent groups.
  */

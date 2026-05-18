@@ -5,7 +5,7 @@ interface TopbarProps {
   subtitle?: string;
   /**
    * Right-aligned controls slot — filter toggles, project select, search box,
-   * etc. Filled by route-level pages (T08 wires this up for `/`).
+   * etc. Optional; pages that don't have controls pass nothing.
    */
   controls?: ReactNode;
 }

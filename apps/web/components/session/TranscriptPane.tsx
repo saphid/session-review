@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isBootstrapContext } from "@/lib/transcript-noise";
 import type { TranscriptItem } from "@/lib/types";
 import { Toc, type TocEntry } from "./Toc";
@@ -13,6 +14,12 @@ interface TranscriptPaneProps {
 
 const DEFAULT_LINES_PER_TURN = 18;
 
+function parseTurnParam(raw: string | null): number | null {
+  if (!raw) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : null;
+}
+
 /**
  * Two-column transcript reader. Streams items from `/api/session?id=…`
  * line-by-line so the first cards mount before the full transcript has
@@ -23,12 +30,24 @@ const DEFAULT_LINES_PER_TURN = 18;
  * items are appended to local state.
  */
 export function TranscriptPane({ sessionId }: TranscriptPaneProps) {
+  const searchParams = useSearchParams();
+  // Only consume the initial URL value — subsequent updates are driven by
+  // user interaction (TOC clicks and j/k), not by external param changes.
+  // We don't depend on `searchParams` so the URL ↔ state binding is
+  // strictly one-way after mount.
+  const initialTurnRef = useRef<number | null>(parseTurnParam(searchParams.get("turn")));
+  const initialTurn = initialTurnRef.current;
+
   const [items, setItems] = useState<TranscriptItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [linesPerTurn, setLinesPerTurn] = useState(DEFAULT_LINES_PER_TURN);
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
   const [expandSignal, setExpandSignal] = useState<number | null>(null);
   const [collapseSignal, setCollapseSignal] = useState<number | null>(null);
+  // Currently focused turn — drives `?turn=N` URL state and the j/k jump
+  // target. `null` means "no explicit selection yet"; the first j/k or
+  // TOC click resolves it.
+  const [currentTurn, setCurrentTurn] = useState<number | null>(initialTurn);
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -73,9 +92,107 @@ export function TranscriptPane({ sessionId }: TranscriptPaneProps) {
     return items.filter((item) => selectedRoles.includes(item.role));
   }, [items, selectedRoles]);
 
+  const hiddenBootstrapCount = useMemo(
+    () => tocEntries.filter((entry) => entry.isBootstrap).length,
+    [tocEntries],
+  );
+
+  // When the selected turn changes, scroll its card into view and write
+  // the turn index into the URL. We use `history.replaceState` directly
+  // (not `router.replace`) so the section doesn't re-render and lose the
+  // streaming state on every keystroke.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (currentTurn === null) {
+      if (url.searchParams.has("turn")) {
+        url.searchParams.delete("turn");
+        window.history.replaceState(null, "", url.toString());
+      }
+      return;
+    }
+    const card = document.querySelector<HTMLElement>(
+      `[data-turn-card="${currentTurn}"]`,
+    );
+    if (card) {
+      const reducedMotion = window.matchMedia(
+        "(prefers-reduced-motion: reduce)",
+      ).matches;
+      card.scrollIntoView({
+        behavior: reducedMotion ? "auto" : "smooth",
+        block: "start",
+      });
+    }
+    if (url.searchParams.get("turn") !== String(currentTurn)) {
+      url.searchParams.set("turn", String(currentTurn));
+      window.history.replaceState(null, "", url.toString());
+    }
+  }, [currentTurn, items.length]);
+
+  // Clamp `currentTurn` once items are loaded — a bad URL value (`?turn=99999`,
+  // `?turn=-5`, `?turn=abc`) would otherwise sit in the URL forever with no
+  // matching card. Drop it as soon as we can prove the index doesn't exist.
+  useEffect(() => {
+    if (currentTurn === null) return;
+    if (items.length === 0) return;
+    const exists = items.some((item) => item.index === currentTurn);
+    if (!exists) {
+      setCurrentTurn(null);
+    }
+  }, [currentTurn, items]);
+
+  // j / k / ArrowDown / ArrowUp — step through visible turns. Bound at the
+  // document level so the user doesn't need to focus a specific element
+  // first; bails out if the user is typing in an input.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const target = e.target as Element | null;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        (target instanceof HTMLElement && target.isContentEditable)
+      ) {
+        return;
+      }
+      let direction: 1 | -1;
+      if (e.key === "j" || e.key === "ArrowDown") direction = 1;
+      else if (e.key === "k" || e.key === "ArrowUp") direction = -1;
+      else return;
+      if (visibleItems.length === 0) return;
+      e.preventDefault();
+      setCurrentTurn((prev) => {
+        const first = visibleItems[0];
+        const last = visibleItems[visibleItems.length - 1];
+        if (!first || !last) return prev;
+        if (prev === null) {
+          return direction === 1 ? first.index : last.index;
+        }
+        const idx = visibleItems.findIndex((it) => it.index === prev);
+        if (idx === -1) return first.index;
+        const nextPos = Math.max(
+          0,
+          Math.min(visibleItems.length - 1, idx + direction),
+        );
+        return visibleItems[nextPos]?.index ?? prev;
+      });
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [visibleItems]);
+
+  const onTurnSelect = useCallback((index: number) => {
+    setCurrentTurn(index);
+  }, []);
+
   return (
     <section className="grid gap-4 px-4 py-4 md:grid-cols-[260px_minmax(0,1fr)] md:px-6">
-      <Toc entries={tocEntries} />
+      <Toc
+        entries={tocEntries}
+        currentTurn={currentTurn}
+        onSelect={onTurnSelect}
+      />
       <div className="flex min-w-0 flex-col gap-3">
         <Toolbar
           roleOptions={roleOptions}
@@ -86,6 +203,20 @@ export function TranscriptPane({ sessionId }: TranscriptPaneProps) {
           linesPerTurn={linesPerTurn}
           onApplyLinesPerTurn={setLinesPerTurn}
         />
+        {hiddenBootstrapCount > 0 && items.length > 0 ? (
+          <p
+            data-testid="noise-filter-status"
+            className="text-muted-strong text-[11px] tabular-nums"
+          >
+            {items.length - hiddenBootstrapCount} reading turn
+            {items.length - hiddenBootstrapCount === 1 ? "" : "s"} ·{" "}
+            {hiddenBootstrapCount} bootstrap turn
+            {hiddenBootstrapCount === 1 ? "" : "s"} muted ·{" "}
+            <span className="text-muted">j/k to step</span>
+          </p>
+        ) : items.length > 0 ? (
+          <p className="text-muted text-[11px]">j/k to step turns</p>
+        ) : null}
         {error ? (
           <p
             role="alert"
@@ -95,7 +226,25 @@ export function TranscriptPane({ sessionId }: TranscriptPaneProps) {
           </p>
         ) : null}
         {items.length === 0 && error === null ? (
-          <p className="text-muted text-sm">Loading transcript…</p>
+          <div
+            role="status"
+            aria-live="polite"
+            aria-label="Loading transcript"
+            className="flex flex-col gap-2"
+          >
+            <span className="sr-only">Loading transcript…</span>
+            {[0, 1, 2].map((slot) => (
+              <div
+                key={slot}
+                className="border-border bg-surface motion-safe:animate-pulse rounded-md border-y border-l-2 border-r p-3"
+                style={{ borderLeftColor: "var(--color-border)" }}
+              >
+                <div className="bg-surface-raised mb-2 h-3 w-32 rounded" />
+                <div className="bg-surface-raised mb-1 h-2 w-full rounded" />
+                <div className="bg-surface-raised h-2 w-2/3 rounded" />
+              </div>
+            ))}
+          </div>
         ) : null}
         <div className="flex flex-col gap-2">
           {visibleItems.map((item) => (
@@ -105,6 +254,7 @@ export function TranscriptPane({ sessionId }: TranscriptPaneProps) {
               linesPerTurn={linesPerTurn}
               expandSignal={expandSignal}
               collapseSignal={collapseSignal}
+              isCurrent={item.index === currentTurn}
             />
           ))}
         </div>

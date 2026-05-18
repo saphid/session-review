@@ -1,0 +1,25 @@
+{
+  "id": "7a73cea7",
+  "phase": "completed",
+  "pageUrl": "/",
+  "sourceFile": null,
+  "expectedVariants": 3,
+  "arrivedVariants": 0,
+  "visibleVariant": 0,
+  "paramValues": {},
+  "pendingEventSeq": null,
+  "pendingEvent": null,
+  "deliveryLease": null,
+  "checkpointRevision": 9,
+  "activeOwner": "4b577934",
+  "sourceMarkers": {},
+  "fallbackMode": null,
+  "annotationArtifacts": [],
+  "diagnostics": [
+    {
+      "error": "agent_error",
+      "message": "Clearing stale live generate after manual cleanup; no source changes needed."
+    }
+  ],
+  "updatedAt": "2026-05-06T23:10:42.650Z"
+}

@@ -3,6 +3,7 @@ import { ResultsTable } from "@/components/search/ResultsTable";
 import { Topbar } from "@/components/shell/Topbar";
 import { parse } from "@/lib/search-params";
 import { searchSessionsForPage } from "@/lib/server-search";
+import { getSessionsCount } from "@/lib/sessions-count";
 
 // SQLite + the search SQL must run on Node — Next's Edge runtime has no
 // better-sqlite3 binding. Search results also depend on the URL query
@@ -17,31 +18,32 @@ interface SessionsPageProps {
 }
 
 /**
- * Sessions list (route `/`). Server component composing two beads:
- *
- *   - T08 owns URL ↔ typed-params parsing (`parse`) and the SSR data
- *     fetch (`searchSessionsForPage`). It also renders the `<Filters>`
- *     chrome above the table, which writes URL state on change.
- *   - T09 owns the actual `<ResultsTable>` with sortable headers that
- *     round-trip sort/dir through the URL.
- *
- * Both consumers share a single `parse(raw)` + `searchSessionsForPage`
- * call so the row count shown by the filter chrome and the rows rendered
- * in the table never disagree. The Topbar title is "Sessions" per the
- * redesign brief; the brand link in the sidebar still reads "Session
- * Review home".
+ * Sessions list (route `/`). Server component that parses the URL into typed
+ * filters, runs the search, and renders the filter chrome plus the results
+ * table. Both `<Filters>` and `<ResultsTable>` read from a single
+ * `searchSessionsForPage` call so the result count shown above the table and
+ * the rows rendered in it can never disagree.
  */
 export default async function SessionsPage({ searchParams }: SessionsPageProps) {
   const raw = await searchParams;
   const parsed = parse(raw);
   const rows = searchSessionsForPage(parsed);
+  // `total` is the row count in `sessions` (capped). When it is zero the
+  // database has never been ingested; the empty state needs the explicit
+  // `npm start -- ingest` CTA rather than the per-query "no matches"
+  // string.
+  const { total } = getSessionsCount();
 
   return (
     <>
       <Topbar title="Sessions" subtitle="Evidence table" />
       <section className="flex flex-1 flex-col gap-4 px-4 py-6 md:px-6">
         <Filters initial={parsed} resultCount={rows.length} />
-        <ResultsTable rows={rows} searchParams={raw} />
+        <ResultsTable
+          rows={rows}
+          searchParams={raw}
+          totalIndexedSessions={total}
+        />
       </section>
     </>
   );

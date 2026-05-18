@@ -31,6 +31,12 @@ interface ResultsTableProps {
    * existing values (provider, query, …) to round-trip.
    */
   searchParams: Record<string, string | string[] | undefined>;
+  /**
+   * Total row count in the `sessions` table (capped). When zero the empty
+   * state switches from "no matches" to the `npm start -- ingest` onboarding
+   * CTA.
+   */
+  totalIndexedSessions: number;
 }
 
 const PROVIDER_GLYPH: Record<string, string> = {
@@ -42,32 +48,29 @@ const PROVIDER_GLYPH: Record<string, string> = {
 
 /**
  * Headline 8-column results table. Server-rendered in shell, hydrated as a
- * client component so sortable headers can write URL state and copy/attach
- * row actions can run.
+ * client component so sortable headers can write URL state and the
+ * copy/attach row actions can run.
  *
- * Columns (per PLAN T09 / docs/review/03-search-page.md):
- *   1. AGENT     — provider glyph
- *   2. TASK      — title + subtitle
- *   3. PROJECT   — humanized cwd
- *   4. RELATION  — primary / subagent / batch pill + parent name
- *   5. RUN TIME  — date + 24h time, NO fabricated duration
- *   6. ACTIVITY  — tokens · tools (no fabricated turns/duration)
- *   7. MATCH     — real `matchScore` pill, or em-dash when null
- *   8. ACTIONS   — Pi attach button + copy-path button
+ * Columns: AGENT, TASK, PROJECT, RELATION (primary / batch / subagent of …),
+ * RUN TIME (date + time), ACTIVITY (tokens · tools), MATCH (BM25 pill or
+ * em-dash when no query), ACTIONS (Pi attach + copy-path).
  *
- * Sortable headers: RUN TIME / ACTIVITY / MATCH. Each renders a real
- * `<button>` inside the `<th>` so keyboard users get Tab+Enter parity.
- * `aria-sort` is updated honestly — only the active column carries an
- * "ascending" or "descending" value; the rest report "none".
+ * Sortable headers — RUN TIME, ACTIVITY, MATCH — render a real `<button>`
+ * inside the `<th>` so keyboard users get Tab+Enter parity. `aria-sort` is
+ * updated honestly: only the active column carries "ascending" or
+ * "descending"; the rest report "none".
  *
- * Responsive split (T16): the desktop table is `min-width: 1060px` which
- * forces horizontal scroll on phones, so under `md` we render a stacked
- * list of `<ResultCard>` instead. The desktop branch keeps the T10 row
- * drawer (click row → expand `<RowDrawer />`); the mobile branch deep
- * links to `/session/<id>` via `<ResultCard>` and does NOT open a drawer
- * — the screen is too narrow for a side-by-side preview.
+ * Responsive split: under the `md` breakpoint the desktop `<table>`
+ * (`min-width: 1060px`) is hidden in favour of a stacked `<ResultCard>` list,
+ * because horizontal scroll on a phone is not acceptable. Cards link
+ * directly to `/session/<id>` and do not open an in-place drawer — there
+ * isn't room for a side-by-side preview at 390 px.
  */
-export function ResultsTable({ rows, searchParams }: ResultsTableProps) {
+export function ResultsTable({
+  rows,
+  searchParams,
+  totalIndexedSessions,
+}: ResultsTableProps) {
   const router = useRouter();
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
 
@@ -122,20 +125,20 @@ export function ResultsTable({ rows, searchParams }: ResultsTableProps) {
 
   return (
     <>
-      {/* Mobile (<720 px): stacked card layout. The desktop table is
-       * `min-width: 1060px` which forces horizontal scroll on phones. We
-       * render both surfaces and let the responsive class hide the wrong
-       * one — keeps server-side data flow identical for both. Cards link
-       * directly to /session/<id> instead of expanding an in-place drawer
-       * (mobile has no room for a side-by-side preview). */}
+      {/* Mobile (<720 px): stacked card layout. We render both surfaces and
+       * let the responsive class hide the wrong one — server-side data flow
+       * is identical for both. Cards deep-link to /session/<id> instead of
+       * expanding an in-place drawer; phones have no room for a side-by-side
+       * preview. */}
       <div
         className="flex flex-col gap-2 md:hidden"
         data-testid="results-card-list"
       >
         {rows.length === 0 ? (
-          <p className="text-muted border-border bg-surface rounded-md border px-4 py-6 text-center text-sm">
-            No sessions match the current filters.
-          </p>
+          <EmptyState
+            totalIndexedSessions={totalIndexedSessions}
+            variant="card"
+          />
         ) : (
           rows.map((row) => <ResultCard key={row.sessionId} row={row} />)
         )}
@@ -193,11 +196,11 @@ export function ResultsTable({ rows, searchParams }: ResultsTableProps) {
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td
-                  colSpan={8}
-                  className="text-muted px-4 py-6 text-center text-sm"
-                >
-                  No sessions match the current filters.
+                <td colSpan={8} className="px-4 py-6">
+                  <EmptyState
+                    totalIndexedSessions={totalIndexedSessions}
+                    variant="cell"
+                  />
                 </td>
               </tr>
             ) : (
@@ -305,6 +308,7 @@ function Row({ row, expanded, onToggle, onClose }: RowProps) {
   const relation = relationFor(row);
   const { date, time } = runtimeDisplay(row);
   const { tokens, tools } = activityMetrics(row);
+  const drawerId = `row-drawer-${row.sessionId}`;
 
   // Click anywhere on the row toggles the drawer, but we exclude clicks
   // that originate inside an interactive control (the row-action cluster,
@@ -332,6 +336,8 @@ function Row({ row, expanded, onToggle, onClose }: RowProps) {
         onKeyDown={onRowKey}
         tabIndex={0}
         aria-expanded={expanded}
+        aria-controls={expanded ? drawerId : undefined}
+        aria-label={`${expanded ? "Hide" : "Show"} details for ${title}`}
         className="border-border hover:bg-surface-low focus-visible:ring-accent/55 cursor-pointer border-b align-middle last:border-b-0 focus-visible:outline-none focus-visible:ring-2"
       >
         <td className="px-3 py-2 text-center">
@@ -396,6 +402,7 @@ function Row({ row, expanded, onToggle, onClose }: RowProps) {
       </tr>
       {expanded ? (
         <tr
+          id={drawerId}
           data-session-id={`${row.sessionId}-drawer`}
           className="bg-surface-low"
         >
@@ -436,6 +443,48 @@ function RelationCell({ relation }: { relation: Relation }) {
       <span className="text-muted truncate text-xs" title={relation.parentTitle ?? ""}>
         {relation.parentTitle ?? "(unknown parent)"}
       </span>
+    </div>
+  );
+}
+
+interface EmptyStateProps {
+  totalIndexedSessions: number;
+  /**
+   * Where this empty state is rendered: inside a `<td>` cell of the desktop
+   * table, or as a stacked surface in the mobile card list. Affects only
+   * the wrapper styling.
+   */
+  variant: "cell" | "card";
+}
+
+function EmptyState({ totalIndexedSessions, variant }: EmptyStateProps) {
+  const wrapper =
+    variant === "card"
+      ? "border-border bg-surface rounded-md border px-4 py-6 text-center"
+      : "text-center";
+  if (totalIndexedSessions === 0) {
+    return (
+      <div className={wrapper}>
+        <p className="text-text text-sm font-medium">No indexed sessions yet</p>
+        <p className="text-muted mt-1 text-xs">
+          Run the ingest command from the project root to populate the local
+          index:
+        </p>
+        <pre className="bg-field text-text mx-auto mt-3 inline-block rounded-md px-3 py-2 text-left font-mono text-xs">
+          <code>npm start -- ingest</code>
+        </pre>
+      </div>
+    );
+  }
+  return (
+    <div className={wrapper}>
+      <p className="text-muted text-sm">
+        No sessions match the current filters.
+      </p>
+      <p className="text-muted-strong mt-1 text-xs">
+        Try a broader query, widen the date range, or clear the advanced
+        filters.
+      </p>
     </div>
   );
 }

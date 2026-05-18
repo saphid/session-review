@@ -17,8 +17,8 @@ interface UsageTableProps {
  * Sessions. `aria-sort` updates honestly on click so screen readers track
  * which column is active without us re-keying the header text.
  *
- * The component is intentionally read-only — T15 will turn rows into links so
- * a click filters the search page to that tool.
+ * Rows act as drill-downs: clicking one navigates to the search page
+ * filtered by that tool.
  */
 export function UsageTable({ rows }: UsageTableProps) {
   const router = useRouter();

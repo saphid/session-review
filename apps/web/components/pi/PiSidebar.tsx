@@ -6,9 +6,8 @@ import {
   useId,
   useRef,
   useState,
-  type KeyboardEvent,
-  type PointerEvent,
 } from "react";
+import { useResizableWidth } from "@/lib/hooks/useResizableWidth";
 import { AttachmentList } from "./AttachmentList";
 import { PiInput } from "./PiInput";
 import { PiMessageList, type PiMessage } from "./PiMessageList";
@@ -42,7 +41,19 @@ export function PiSidebar({ files = [], screen = null, selectedItem = null }: Pi
   const [messages, setMessages] = useState<PiMessage[]>([]);
   const [chatId, setChatId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [width, setWidth] = useState<number>(MIN_WIDTH + 40);
+  const { width, pointerHandlers, onKeyDown: onSeparatorKey } =
+    useResizableWidth({
+      min: MIN_WIDTH,
+      max: MAX_WIDTH,
+      initial: MIN_WIDTH + 40,
+      storageKey: STORAGE_KEY,
+      direction: "left-grows",
+    });
+  // Real count of files attached to the underlying `pi` child, sourced from
+  // the server's `x-pi-attached-files` response header. The prop `files` is
+  // the *additional* set the page passes in; the route always also attaches
+  // the app's own source. `null` until the first turn completes.
+  const [serverAttachedCount, setServerAttachedCount] = useState<number | null>(null);
   const sidebarId = useId();
   const activeController = useRef<AbortController | null>(null);
 
@@ -61,70 +72,16 @@ export function PiSidebar({ files = [], screen = null, selectedItem = null }: Pi
     setBusy(false);
   }, []);
 
-  // Hydrate width from localStorage after mount (avoids SSR mismatch).
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    if (!stored) return;
-    const parsed = Number(stored);
-    if (Number.isFinite(parsed) && parsed >= MIN_WIDTH && parsed <= MAX_WIDTH) {
-      setWidth(parsed);
-    }
-  }, []);
-
-  const persistWidth = useCallback((next: number) => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(STORAGE_KEY, String(next));
-  }, []);
-
-  const setWidthClamped = useCallback(
-    (next: number) => {
-      const clamped = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Math.round(next)));
-      setWidth(clamped);
-      persistWidth(clamped);
-    },
-    [persistWidth],
-  );
-
-  // Pointer-driven resize.
-  const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
-  const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    dragRef.current = { startX: event.clientX, startWidth: width };
-    (event.currentTarget as Element).setPointerCapture(event.pointerId);
-  };
-  const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
-    if (!dragRef.current) return;
-    const delta = dragRef.current.startX - event.clientX; // dragging left widens
-    setWidthClamped(dragRef.current.startWidth + delta);
-  };
-  const onPointerUp = (event: PointerEvent<HTMLDivElement>) => {
-    if (!dragRef.current) return;
-    dragRef.current = null;
-    (event.currentTarget as Element).releasePointerCapture(event.pointerId);
-  };
-
-  const onSeparatorKey = (event: KeyboardEvent<HTMLDivElement>) => {
-    const STEP = 16;
-    if (event.key === "ArrowLeft") {
-      event.preventDefault();
-      setWidthClamped(width + STEP);
-    } else if (event.key === "ArrowRight") {
-      event.preventDefault();
-      setWidthClamped(width - STEP);
-    } else if (event.key === "Home") {
-      event.preventDefault();
-      setWidthClamped(MAX_WIDTH);
-    } else if (event.key === "End") {
-      event.preventDefault();
-      setWidthClamped(MIN_WIDTH);
-    }
-  };
+  // Track the last user message text so the retry button on an error
+  // bubble can re-send it without the user re-typing. Cleared once a
+  // healthy response arrives or the user starts a new chat.
+  const [lastUserMessage, setLastUserMessage] = useState<string | null>(null);
 
   const sendMessage = useCallback(
     async (text: string) => {
       const userId = crypto.randomUUID();
       const assistantId = crypto.randomUUID();
+      setLastUserMessage(text);
       const history = messages
         .filter((message) => !message.isError)
         .slice(-12)
@@ -156,6 +113,14 @@ export function PiSidebar({ files = [], screen = null, selectedItem = null }: Pi
 
         const headerChatId = response.headers.get("x-pi-chat-id");
         if (headerChatId) setChatId(headerChatId);
+
+        const headerAttached = response.headers.get("x-pi-attached-files");
+        if (headerAttached !== null) {
+          const parsed = Number(headerAttached);
+          if (Number.isFinite(parsed) && parsed >= 0) {
+            setServerAttachedCount(parsed);
+          }
+        }
 
         if (!response.ok) {
           // Structured JSON error (route returned before stream started).
@@ -295,7 +260,31 @@ export function PiSidebar({ files = [], screen = null, selectedItem = null }: Pi
   const startNewChat = () => {
     setMessages([]);
     setChatId(null);
+    setLastUserMessage(null);
   };
+
+  const retryLast = useCallback(() => {
+    if (busy) return;
+    const text = lastUserMessage;
+    if (!text) return;
+    // Drop the failed exchange (last user + last assistant) so retrying
+    // doesn't leave the error bubble in the history. The retry creates
+    // fresh entries via sendMessage.
+    setMessages((prior) => {
+      const next = [...prior];
+      while (next.length > 0) {
+        const tail = next[next.length - 1];
+        if (!tail) break;
+        if (tail.role === "user") {
+          next.pop();
+          break;
+        }
+        next.pop();
+      }
+      return next;
+    });
+    void sendMessage(text);
+  }, [busy, lastUserMessage, sendMessage]);
 
   return (
     <aside
@@ -312,12 +301,16 @@ export function PiSidebar({ files = [], screen = null, selectedItem = null }: Pi
         aria-valuemin={MIN_WIDTH}
         aria-valuemax={MAX_WIDTH}
         tabIndex={0}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
+        {...pointerHandlers}
         onKeyDown={onSeparatorKey}
-        className="hover:bg-accent/40 focus-visible:bg-accent/60 absolute inset-y-0 left-0 w-1 cursor-col-resize focus-visible:outline-none"
+        // 3px wide and transparent at rest so the handle has a real hit
+        // target without being visually heavy. On hover/focus the accent
+        // colour fills the strip — the user can see what they're about
+        // to grab. Negative left offset bleeds the strip into the
+        // border-l line so the visual width feels narrower than the hit
+        // target. The transition is `motion-safe:` so it respects the
+        // user's `prefers-reduced-motion` setting.
+        className="hover:bg-accent focus-visible:bg-accent motion-safe:transition-colors absolute inset-y-0 -left-[1px] w-[3px] cursor-col-resize focus-visible:outline-none"
       />
 
       <header className="border-border flex items-start justify-between gap-3 border-b px-4 py-3">
@@ -340,23 +333,66 @@ export function PiSidebar({ files = [], screen = null, selectedItem = null }: Pi
         <span className="bg-accent-soft text-accent rounded px-2 py-0.5 font-medium">
           Session
         </span>
-        <span className="border-border text-muted-strong inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5">
-          {files.length}/{files.length} source file{files.length === 1 ? "" : "s"}
+        <span
+          className="border-border text-muted-strong inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5"
+          title={
+            serverAttachedCount === null
+              ? "Source files are attached automatically by the server before the first turn."
+              : `${serverAttachedCount} file${serverAttachedCount === 1 ? "" : "s"} attached on the last turn` +
+                (files.length > 0
+                  ? ` (${files.length} passed in by this page, plus the app's auto-attached source)`
+                  : " (the app's auto-attached source).")
+          }
+        >
+          {serverAttachedCount === null ? (
+            <>auto-attached</>
+          ) : (
+            <>
+              {serverAttachedCount} attached
+              {files.length > 0 ? ` · ${files.length} from page` : ""}
+            </>
+          )}
           <AttachmentList files={files} />
         </span>
         {chatId ? (
-          <span className="text-muted ml-auto font-mono text-[10px]">
-            chat {chatId.slice(0, 8)}
-          </span>
+          <ChatIdBadge chatId={chatId} />
         ) : null}
       </div>
 
       <PiMessageList
         messages={messages}
         emptyState="Ready. Ask Pi about the visible page — follow-ups reuse the same persistent session."
+        {...(lastUserMessage ? { onRetry: retryLast } : {})}
       />
 
       <PiInput disabled={busy} onSubmit={sendMessage} onStop={stopStreaming} />
     </aside>
+  );
+}
+
+function ChatIdBadge({ chatId }: { chatId: string }) {
+  const [copied, setCopied] = useState(false);
+  const onCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(chatId);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard rejected — fail silently, badge keeps showing the ID */
+    }
+  };
+  return (
+    <button
+      type="button"
+      onClick={onCopy}
+      title={`Copy chat id ${chatId}`}
+      aria-label={
+        copied ? `Copied chat id ${chatId}` : `Copy chat id ${chatId}`
+      }
+      className="text-muted hover:text-text-secondary focus-visible:focus-ring ml-auto inline-flex items-center gap-1 font-mono text-[10px] focus-visible:outline-none"
+    >
+      <span>chat {chatId.slice(0, 8)}</span>
+      <span aria-hidden="true">{copied ? "✓" : "⧉"}</span>
+    </button>
   );
 }

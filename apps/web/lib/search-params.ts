@@ -92,7 +92,7 @@ export function serialize(params: ParsedSearchParams): URLSearchParams {
 
 /**
  * Build a search-page href that drills to sessions matching `query`, optionally
- * scoped to a date range. Used by the usage page (T15) so a click on a legend
+ * scoped to a date range. Used by the usage page so a click on a legend
  * item, bar segment, or table row pivots to the session list filtered to that
  * tool/skill — and to the bucket the segment belongs to, when known.
  *

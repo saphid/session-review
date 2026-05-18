@@ -10,7 +10,7 @@ interface SearchBarProps {
    * `router.replace` so the URL only changes when the user pauses typing.
    */
   onCommit: (value: string) => void;
-  /** Debounce window in ms. Defaults to 300, per the T08 brief. */
+  /** Debounce window in ms. Defaults to 300. */
   debounceMs?: number;
 }
 

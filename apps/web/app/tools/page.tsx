@@ -29,7 +29,18 @@ export default async function ToolsPage({ searchParams }: ToolsPageProps) {
 
   const { rows, series } = buildUsageSeries(timeline, summary);
   const totalSignals = summary.reduce((sum, row) => sum + row.count, 0);
-  const dataPoints = timeline.length;
+  // `timeline.length` is the number of date *buckets* in the requested
+  // window; only buckets with at least one signal count as "active". The
+  // distinction matters: a 7-day window with one active day reads
+  // honestly as `1 active day · 7d window`, not `7 data points`.
+  const activeDays = timeline.filter((row) => {
+    const total = Object.entries(row).reduce(
+      (sum, [k, v]) => (k === "bucket" ? sum : sum + (typeof v === "number" ? v : 0)),
+      0,
+    );
+    return total > 0;
+  }).length;
+  const windowDays = timeline.length;
   const subtitle = kind === "skill" ? "Skill signals" : "Tool signals";
 
   return (
@@ -41,7 +52,11 @@ export default async function ToolsPage({ searchParams }: ToolsPageProps) {
           aria-live="polite"
           className="text-text-secondary text-xs tabular-nums"
         >
-          {totalSignals.toLocaleString()} signals · {dataPoints.toLocaleString()} data points · {elapsedMs}ms
+          {totalSignals.toLocaleString()} signals ·{" "}
+          {activeDays.toLocaleString()} active{" "}
+          {activeDays === 1 ? "day" : "days"} ·{" "}
+          {windowDays.toLocaleString()}d window{" "}
+          <span className="text-muted">{elapsedMs}ms</span>
         </p>
         <UsageChart rows={rows} series={series} kind={kind} bucket={bucket} />
         <UsageLegend series={series} />

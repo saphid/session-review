@@ -12,6 +12,12 @@ interface TurnCardProps {
   expandSignal: number | null;
   /** External collapse signal from the toolbar. */
   collapseSignal: number | null;
+  /**
+   * Whether this turn is the parent-controlled "current" one (driven by
+   * `?turn=N` URL state and j/k keyboard nav). Adds an accent ring so the
+   * keyboard cursor is visible even after `scrollIntoView` finishes.
+   */
+  isCurrent?: boolean;
 }
 
 const TOOL_LIKE = new Set(["tool", "tool_result", "bashexecution"]);
@@ -21,7 +27,7 @@ const TOOL_LIKE = new Set(["tool", "tool_result", "bashexecution"]);
  * `linesPerTurn`; the "Show more" button reveals the rest. The wrapping
  * `data-turn-card` attribute is the scroll target for the TOC.
  *
- * Bootstrap context turns (T12 — `pi-opentelemetry.resource_snapshot`,
+ * Bootstrap context turns (`pi-opentelemetry.resource_snapshot`,
  * `custom`/`context` harness wiring) start collapsed *regardless of
  * length* and surface a "Show bootstrap context" affordance. Once the
  * user opens them they stay open for the rest of the page lifetime;
@@ -32,6 +38,7 @@ export function TurnCard({
   linesPerTurn,
   expandSignal,
   collapseSignal,
+  isCurrent = false,
 }: TurnCardProps) {
   const isBootstrap = isBootstrapContext({
     role: item.role,
@@ -70,10 +77,10 @@ export function TurnCard({
       ? "Show less"
       : "Show more";
   // Bootstrap turns: once revealed, the user keeps it open for the
-  // page lifetime (T12 constraint — no per-card "Hide" toggle). The
-  // button itself stays in the DOM with the same label so screen
-  // readers can still read aria-expanded; clicks become a no-op once
-  // expanded. Non-bootstrap turns keep the legacy toggle behavior.
+  // page lifetime — there is no per-card "Hide" toggle. The button
+  // itself stays in the DOM with the same label so screen readers can
+  // still read aria-expanded; clicks become a no-op once expanded.
+  // Non-bootstrap turns keep the standard toggle behavior.
   const onToggleClick = (): void => {
     if (isBootstrap && expanded) return;
     setExpanded((prev) => !prev);
@@ -85,8 +92,9 @@ export function TurnCard({
       data-turn-card={item.index}
       data-role={item.role}
       data-bootstrap={isBootstrap ? "true" : undefined}
+      data-current={isCurrent ? "true" : undefined}
       tabIndex={-1}
-      className={`border-border bg-surface focus:outline-none flex scroll-mt-4 flex-col gap-2 rounded-md border-l-2 border-y border-r p-3 ${roleAccent(item.role)}`}
+      className={`border-border bg-surface focus:outline-none flex scroll-mt-4 flex-col gap-2 rounded-md border-l-2 border-y border-r p-3 ${roleAccent(item.role)} ${isCurrent ? "ring-accent/60 ring-2" : ""}`}
     >
       <header className="text-muted-strong flex flex-wrap items-baseline gap-2 text-xs uppercase tracking-[0.05em]">
         <span className="text-text-secondary tabular-nums">#{item.index}</span>

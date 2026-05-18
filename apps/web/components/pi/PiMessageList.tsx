@@ -13,9 +13,18 @@ export interface PiMessage {
 interface PiMessageListProps {
   messages: PiMessage[];
   emptyState: string;
+  /**
+   * Optional retry handler — when present, error bubbles render a "Retry"
+   * button that re-sends the previous user turn.
+   */
+  onRetry?: () => void;
 }
 
-export function PiMessageList({ messages, emptyState }: PiMessageListProps) {
+export function PiMessageList({
+  messages,
+  emptyState,
+  onRetry,
+}: PiMessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -65,6 +74,16 @@ export function PiMessageList({ messages, emptyState }: PiMessageListProps) {
           <div className="whitespace-pre-wrap break-words leading-relaxed">
             {message.content || (message.isStreaming ? "…" : "")}
           </div>
+          {message.isError && onRetry ? (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="text-danger hover:text-text focus-visible:focus-ring mt-2 inline-flex items-center rounded border border-current/40 px-2 py-0.5 text-[11px] font-medium focus-visible:outline-none"
+              data-testid="pi-retry"
+            >
+              Retry
+            </button>
+          ) : null}
         </div>
       ))}
     </div>

@@ -8,6 +8,7 @@ import {
   formatTokens,
   projectLabel,
   relationFor,
+  runtimeDisplay,
   type Relation,
 } from "@/lib/search-display";
 import { MatchPill } from "./MatchPill";
@@ -40,6 +41,7 @@ export function ResultCard({ row }: ResultCardProps) {
   const project = projectLabel(row);
   const relation = relationFor(row);
   const { tokens, tools } = activityMetrics(row);
+  const { date, time } = runtimeDisplay(row);
 
   return (
     <article
@@ -63,6 +65,14 @@ export function ResultCard({ row }: ResultCardProps) {
         <RelationPill relation={relation} />
       </div>
       <div className="flex items-center gap-3 text-xs tabular-nums">
+        {date ? (
+          <span
+            className="text-text-secondary inline-flex items-baseline gap-1"
+            title={time ? `${date} · ${time}` : date}
+          >
+            <span className="font-medium">{date}</span>
+          </span>
+        ) : null}
         <span
           className="text-text inline-flex items-baseline gap-1"
           title="Estimated tokens"
@@ -86,7 +96,7 @@ export function ResultCard({ row }: ResultCardProps) {
         >
           Open
         </Link>
-        <RowActions row={row} />
+        <RowActions row={row} showPiAttach={false} />
       </div>
     </article>
   );

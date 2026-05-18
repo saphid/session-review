@@ -17,12 +17,16 @@ test.describe("Tools (usage) page", () => {
     const chartSvg = main.locator("[data-slot='usage-chart'] svg").first();
     await expect(chartSvg).toBeVisible();
 
-    // (a) Status line: role="status" with the canonical "<n> signals · <m> data points · <ms>ms" pattern.
+    // (a) Status line: role="status" with the canonical pattern
+    //   `<n> signals · <a> active day(s) · <w>d window <ms>ms`.
     const status = main.getByRole("status");
     await expect(status).toBeVisible();
-    // Numbers are formatted with locale grouping (e.g. "739,017"). The brief
-    // says `<n> signals · <m> data points · <ms>ms` — accept commas in n/m.
-    await expect(status).toHaveText(/[\d,]+ signals · [\d,]+ data points · \d+ms/);
+    // Numbers are formatted with locale grouping (e.g. "739,017"). Accept
+    // commas in n/a/w. The trailing `<ms>ms` is the server-render time
+    // and is whitespace-separated from the rest of the line.
+    await expect(status).toHaveText(
+      /[\d,]+ signals · [\d,]+ active days? · [\d,]+d window\s*\d+ms/,
+    );
 
     // (b) Legend is a <ul role="list"> with at least 1 focusable item (button).
     const legend = main.getByRole("list", { name: /chart legend/i });

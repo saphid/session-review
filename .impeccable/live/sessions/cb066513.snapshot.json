@@ -1,0 +1,20 @@
+{
+  "id": "cb066513",
+  "phase": "completed",
+  "pageUrl": "/",
+  "sourceFile": "src/web/index.html",
+  "expectedVariants": 3,
+  "arrivedVariants": 3,
+  "visibleVariant": 1,
+  "paramValues": {},
+  "pendingEventSeq": null,
+  "pendingEvent": null,
+  "deliveryLease": null,
+  "checkpointRevision": 6,
+  "activeOwner": "44765ebf",
+  "sourceMarkers": {},
+  "fallbackMode": null,
+  "annotationArtifacts": [],
+  "diagnostics": [],
+  "updatedAt": "2026-05-06T21:48:40.117Z"
+}

@@ -1,0 +1,144 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-05-06T12:23:18Z",
+  "title": "Design System: Session Review",
+  "extensions": {
+    "colorMeta": {
+      "canvas": { "role": "neutral", "displayName": "Black Box Canvas", "canonical": "#0A0D15", "tonalRamp": ["#05060A", "#0A0D15", "#10131C", "#171B26", "#2A3144", "#4B5570", "#8B94AB", "#EDF1FB"] },
+      "surface": { "role": "neutral", "displayName": "Opaque Cockpit Surface", "canonical": "#171B26", "tonalRamp": ["#07090D", "#0F121B", "#121620", "#171B26", "#232A3B", "#4B5570", "#98A3B8", "#F0F2F8"] },
+      "field": { "role": "neutral", "displayName": "Field Black", "canonical": "#080B12", "tonalRamp": ["#030407", "#080B12", "#0D111A", "#141A26", "#242C3C", "#485268", "#98A3B8", "#F0F2F8"] },
+      "border": { "role": "neutral", "displayName": "Hairline Evidence Border", "canonical": "#7E91BE33", "tonalRamp": ["#11141C", "#242A3A", "#3B465F", "#5A6888", "#7E91BE", "#A2B0D2", "#CBD3E5", "#F0F2F8"] },
+      "text": { "role": "neutral", "displayName": "Primary Text", "canonical": "#EDF1FB", "tonalRamp": ["#151821", "#333949", "#596173", "#838C9E", "#AEB6C7", "#CBD3E5", "#EDF1FB", "#F8FAFF"] },
+      "muted": { "role": "neutral", "displayName": "Muted Metadata", "canonical": "#98A3B8", "tonalRamp": ["#11141B", "#242A36", "#3E4658", "#5F6A7F", "#98A3B8", "#B8C1D2", "#D8DDE8", "#F5F7FB"] },
+      "primary": { "role": "primary", "displayName": "Recorder Blue", "canonical": "#7C9CFF", "tonalRamp": ["#07122C", "#13265A", "#2547A2", "#4058DF", "#526DFF", "#7C9CFF", "#CBD7FF", "#F0F4FF"] },
+      "primary-action-bottom": { "role": "primary", "displayName": "Command Blue", "canonical": "#2635A2", "tonalRamp": ["#05091F", "#10194D", "#1B287C", "#2635A2", "#4058DF", "#7C9CFF", "#CBD7FF", "#F0F4FF"] },
+      "secondary": { "role": "secondary", "displayName": "Tool Violet", "canonical": "#A855F7", "tonalRamp": ["#180722", "#32104B", "#5D1D8F", "#7F2DDB", "#A855F7", "#C4B5FD", "#E9DDFF", "#F8F4FF"] },
+      "skill": { "role": "secondary", "displayName": "Skill Green", "canonical": "#9EE493", "tonalRamp": ["#06150A", "#12311A", "#245A2E", "#3B7E45", "#69B86C", "#9EE493", "#D8F5D3", "#F2FFF0"] },
+      "warning": { "role": "tertiary", "displayName": "Amber Highlight", "canonical": "#FBBF24", "tonalRamp": ["#1C1000", "#3F2700", "#815D00", "#B98200", "#FBBF24", "#FFD76A", "#FFE9A8", "#FFF8DD"] }
+    },
+    "typographyMeta": {
+      "headline": { "displayName": "Headline", "purpose": "Product title and major screen headings." },
+      "title": { "displayName": "Title", "purpose": "Panel titles, sidebar headings, transcript section headings, and grouped areas." },
+      "body": { "displayName": "Body", "purpose": "Result summaries, transcript prose containers, chat bubbles, empty-state text, and compact descriptions." },
+      "label": { "displayName": "Label", "purpose": "Form labels, metadata, status lines, legends, hints, and compact controls." },
+      "mono": { "displayName": "Evidence Mono", "purpose": "Paths, token counts, source chips, commands, code, raw transcript text, and session IDs." }
+    },
+    "shadows": [
+      { "name": "ambient-shell", "value": "0 8px 28px rgba(0,0,0,.2)", "purpose": "Top-level module separation only." },
+      { "name": "primary-action-lift", "value": "0 8px 22px rgba(0,0,0,.18)", "purpose": "Executable primary buttons only." },
+      { "name": "flat-evidence-surface", "value": "none", "purpose": "Transcript cards, chat bubbles, source chips, grouped filters, empty states, and nested evidence containers." },
+      { "name": "focus-ring", "value": "0 0 0 3px rgba(124,156,255,.14)", "purpose": "Keyboard focus and active source selection." }
+    ],
+    "motion": [
+      { "name": "state-fast", "value": "120ms ease", "purpose": "Small state changes and transcript content opacity." },
+      { "name": "hover-lift", "value": "transform 120ms ease, filter 120ms ease", "purpose": "Primary command hover feedback only." }
+    ],
+    "breakpoints": [
+      { "name": "sidebar-stack", "value": "1200px" },
+      { "name": "single-column-controls", "value": "900px" },
+      { "name": "phone-header", "value": "640px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Executable command button for actions like Run query and Send.",
+      "html": "<button class=\"ds-btn-primary\">Run query</button>",
+      "css": ".ds-btn-primary { border: 1px solid rgba(145,165,255,.42); border-radius: 10px; padding: 8px 10px; background: linear-gradient(180deg,#4058DF,#2635A2); color: #F0F2F8; font: 600 12px/1.35 ui-sans-serif, system-ui, sans-serif; cursor: pointer; box-shadow: 0 8px 22px rgba(0,0,0,.18); transition: transform 120ms ease, filter 120ms ease; } .ds-btn-primary:hover { filter: brightness(1.08); transform: translateY(-1px); } .ds-btn-primary:focus-visible { outline: none; border-color: rgba(124,156,255,.72); box-shadow: 0 0 0 3px rgba(124,156,255,.14); } .ds-btn-primary:disabled { opacity: .55; cursor: not-allowed; transform: none; }"
+    },
+    {
+      "name": "Tab Button",
+      "kind": "button",
+      "refersTo": "button-tab",
+      "description": "View switcher for Sessions and Tools & Skills.",
+      "html": "<button class=\"ds-tab\" aria-pressed=\"false\">Sessions</button><button class=\"ds-tab\" aria-pressed=\"true\">Tools &amp; Skills</button>",
+      "css": ".ds-tab { border: 1px solid rgba(126,145,190,.22); border-radius: 10px; padding: 8px 10px; background: rgba(13,16,25,.7); color: #CBD3E5; font: 600 12px/1.35 ui-sans-serif, system-ui, sans-serif; cursor: pointer; } .ds-tab[aria-pressed=\"true\"] { background: linear-gradient(180deg,#4058DF,#2635A2); color: #F0F4FF; } .ds-tab:focus-visible { outline: none; border-color: rgba(124,156,255,.72); box-shadow: 0 0 0 3px rgba(124,156,255,.14); }"
+    },
+    {
+      "name": "Search Field",
+      "kind": "input",
+      "refersTo": "input-field",
+      "description": "Compact local transcript query field.",
+      "html": "<label class=\"ds-field\"><span>Search</span><input placeholder=\"sqlite, auth, file path…\" /></label>",
+      "css": ".ds-field { display: grid; gap: 4px; color: #AEB3C2; font: 500 12px/1.35 ui-sans-serif, system-ui, sans-serif; } .ds-field input { border: 1px solid rgba(126,145,190,.22); border-radius: 10px; padding: 8px 10px; background: rgba(8,11,18,.82); color: #F0F2F8; font: 400 13px/1.55 ui-sans-serif, system-ui, sans-serif; outline: none; min-width: 220px; } .ds-field input:focus { border-color: rgba(124,156,255,.72); box-shadow: 0 0 0 3px rgba(124,156,255,.14); }"
+    },
+    {
+      "name": "Panel",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "Top-level dark cockpit module for search, session detail, usage, and Pi chat.",
+      "html": "<section class=\"ds-panel\"><h2>Sessions</h2><p>Search local transcript evidence.</p></section>",
+      "css": ".ds-panel { border: 1px solid rgba(126,145,190,.2); border-radius: 18px; padding: 16px; background: linear-gradient(180deg,#171B26,#121620); color: #EDF1FB; box-shadow: 0 8px 28px rgba(0,0,0,.2); font-family: ui-sans-serif, system-ui, sans-serif; } .ds-panel h2 { margin: 0 0 8px; font-size: 16px; line-height: 1.25; } .ds-panel p { margin: 0; color: #98A3B8; font-size: 13px; line-height: 1.55; }"
+    },
+    {
+      "name": "Source Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Evidence provenance chip for tab, file count, session, and selected source context.",
+      "html": "<span class=\"ds-source-chip\">1 source file</span>",
+      "css": ".ds-source-chip { display: inline-block; max-width: 100%; border: 1px solid rgba(126,145,190,.24); border-radius: 999px; padding: 3px 8px; color: #CBD3E5; background: rgba(8,11,18,.58); font: 400 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }"
+    },
+    {
+      "name": "Transcript Turn Card",
+      "kind": "custom",
+      "refersTo": "transcript-card",
+      "description": "Keyboard-selectable evidence card with full-border role tint.",
+      "html": "<article class=\"ds-turn ds-turn-tool\" tabindex=\"0\"><header><strong>#1</strong><span>tool</span><span>101 tokens</span></header><pre>read src/web/index.html</pre></article>",
+      "css": ".ds-turn { border: 1px solid rgba(123,132,152,.45); border-radius: 16px; padding: 14px 16px; background: linear-gradient(180deg,rgba(23,28,40,.96),rgba(15,19,29,.96)); color: #EDF1FB; overflow-wrap: anywhere; font-family: ui-sans-serif, system-ui, sans-serif; } .ds-turn-tool { border-color: rgba(177,119,255,.58); } .ds-turn:focus-visible { outline: 2px solid #8DA2FF; outline-offset: 2px; } .ds-turn header { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 10px; color: #98A3B8; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; } .ds-turn pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: #EDF1FB; font: 400 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }"
+    },
+    {
+      "name": "Empty State",
+      "kind": "custom",
+      "refersTo": "panel",
+      "description": "Onboarding and recovery surface for no data, no results, empty usage, and errors.",
+      "html": "<div class=\"ds-empty\"><strong>No sessions indexed yet.</strong><p>Ingest local agent transcripts, then return here to search evidence.</p><code>npm start -- ingest</code></div>",
+      "css": ".ds-empty { padding: 18px; border: 1px solid rgba(126,145,190,.2); border-radius: 14px; background: #0F121B; color: #98A3B8; font: 400 13px/1.55 ui-sans-serif, system-ui, sans-serif; } .ds-empty strong { display: block; color: #EDF1FB; margin-bottom: 4px; } .ds-empty p { margin: 0 0 10px; } .ds-empty code { display: inline-flex; max-width: 100%; overflow: auto; border: 1px solid rgba(126,145,190,.16); border-radius: 8px; padding: 3px 6px; background: #080B12; color: #C8D0E5; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Quiet Flight Recorder",
+    "overview": "Session Review is a dark-mode-only local evidence interface. It should feel like a calm black-box recorder for AI coding sessions: precise, durable, and built for long investigation work. The user is usually trying to recover context, trace a decision, inspect a transcript, or ask Pi about the current screen with source context attached.\n\nThe current app uses a restrained cockpit surface: dark opaque panels, full-border role tints, compact controls, source chips, and transcript-first hierarchy. It does not use decorative glass, side stripes, neon glow, metric-card hero layouts, or light-mode defaults. Density is allowed, but the density must be grouped and progressive: primary search first, advanced filters behind disclosure, transcript first, analytics secondary.\n\nIt explicitly rejects bright high-key SaaS dashboards, flashy AI landing-page aesthetics, decorative AI magic treatments, enterprise BI dashboards where charts dominate the workflow, overloaded observability screens, provenance-free chat, and soft productivity UI that sacrifices density and control for empty space.",
+    "keyCharacteristics": [
+      "Dark mode is the required canonical experience.",
+      "Transcript evidence comes before analytics.",
+      "Pi answers are framed by visible source context.",
+      "Primary actions and focus use blue sparingly.",
+      "Role identity uses full-border tint or badges, never side stripes.",
+      "Mobile adapts structurally: single column, 44px touch targets, no horizontal overflow."
+    ],
+    "rules": [
+      { "name": "The Dark Mode Canon Rule", "body": "Dark mode is the product's native environment. Do not design a light-mode surface unless it is explicitly requested as a separate product decision.", "section": "colors" },
+      { "name": "The Signal Rarity Rule", "body": "Recorder Blue is reserved for action, focus, selection, and evidence anchors. If passive content glows blue, the hierarchy is wrong.", "section": "colors" },
+      { "name": "The Role Border Rule", "body": "Role colors identify evidence categories. They appear as full-border tints, badges, or metadata, never as side-stripe borders.", "section": "colors" },
+      { "name": "The Evidence Mono Rule", "body": "Monospace is mandatory for paths, commands, code, raw transcript text, token counts, and session identifiers. It is forbidden for generic marketing or decorative headings.", "section": "typography" },
+      { "name": "The Native Type Rule", "body": "Use platform-native sans-serif for the product shell. Do not import a trendy display or SaaS-default brand font for UI labels.", "section": "typography" },
+      { "name": "The Flat Evidence Rule", "body": "Evidence surfaces do not float inside other surfaces. Use a border, spacing, and tonal contrast instead of another shadow.", "section": "elevation" },
+      { "name": "The No Glass Rule", "body": "Backdrop blur and decorative glass panels are forbidden. This app is a local recorder, not an AI landing page.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do keep dark mode as the required canonical experience.",
+      "Do make transcript evidence and source context visible before analytics or summaries.",
+      "Do keep Pi provenance visible through source chips, selected context, context preview, and attached-source notes.",
+      "Do use Recorder Blue only for action, focus, selection, and evidence anchors.",
+      "Do use full-border role tint or role badges for transcript roles.",
+      "Do use monospace for paths, commands, code, token counts, source chips, raw transcript text, and session IDs.",
+      "Do use empty states as onboarding: no indexed sessions must explain npm start -- ingest.",
+      "Do preserve mobile structure: one column, 44px touch targets, no horizontal overflow.",
+      "Do validate with npm run check, npm run lint, npm run e2e:screenshots, browser proof, and npx --yes impeccable --json src/web/index.html after UI changes."
+    ],
+    "donts": [
+      "Don't introduce a light-mode-first UI or treat dark mode as optional.",
+      "Don't make bright, high-key SaaS dashboards.",
+      "Don't add flashy AI landing-page aesthetics or decorative AI magic treatments.",
+      "Don't use glassmorphism, backdrop blur, neon gradients, or decorative glows.",
+      "Don't use side-stripe borders for cards, transcript turns, callouts, or navigation states.",
+      "Don't make enterprise BI dashboards where charts dominate the workflow.",
+      "Don't create overloaded observability screens that bury the primary investigation path.",
+      "Don't ship chat interfaces that produce answers without clear provenance or attached source context.",
+      "Don't use soft productivity UI that sacrifices density and control for empty space.",
+      "Don't import display fonts or generic SaaS brand fonts for this product shell."
+    ]
+  }
+}

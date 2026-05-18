@@ -28,7 +28,8 @@ const OTHER_LABEL = "Other";
 
 // Chart series colours come from `--color-chart-*` declared in `globals.css`.
 // SVG fill accepts `var()` natively so we route through CSS variables rather
-// than hard-coding hex values, keeping the palette aligned with T03 tokens.
+// than hard-coding hex values, keeping the palette aligned with the design
+// tokens.
 const PALETTE = [
   "var(--color-chart-1)",
   "var(--color-chart-2)",

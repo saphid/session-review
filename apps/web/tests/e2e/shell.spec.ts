@@ -59,12 +59,13 @@ test.describe("App shell — desktop", () => {
     await page.locator("body").click({ position: { x: 1, y: 1 } });
 
     // Tab through the document until focus lands on the brand link. The
-    // Next.js dev overlay injects a "Open Next.js Dev Tools" button that
-    // is in the tab order under `next dev`; up to a few presses are
-    // needed to skip past it on dev. In production builds the very first
-    // Tab lands on the brand.
+    // skip-to-content anchor is the first focus stop on every page, and
+    // the Next.js dev overlay injects a "Open Next.js Dev Tools" button
+    // that is in the tab order under `next dev`; up to a few presses are
+    // needed to skip past either on dev. In production builds the brand
+    // link is the second tab stop (after skip-to-content).
     let tabs = 0;
-    while (tabs < 8) {
+    while (tabs < 12) {
       await page.keyboard.press("Tab");
       const onBrand = await brand.evaluate(
         (el) => document.activeElement === el,
